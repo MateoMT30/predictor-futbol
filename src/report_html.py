@@ -37,13 +37,14 @@ def _bar(label: str, value: float, color: str = "#3b82f6") -> str:
     </div>"""
 
 
-def _stat_card(title: str, summary_local: dict, summary_away: dict, summary_total: Optional[dict] = None) -> str:
+def _stat_card(title: str, summary_local: dict, summary_away: dict, summary_total: Optional[dict] = None,
+               home: str = "Local", away: str = "Visitante") -> str:
     rows = []
     rows.append(f"""
-      <tr><td>Local</td><td>{summary_local['media']:.1f}</td>
+      <tr><td>{html.escape(home)}</td><td>{summary_local['media']:.1f}</td>
           <td>{summary_local['rango_esperado_p10_p90'][0]:.0f} - {summary_local['rango_esperado_p10_p90'][1]:.0f}</td></tr>""")
     rows.append(f"""
-      <tr><td>Visitante</td><td>{summary_away['media']:.1f}</td>
+      <tr><td>{html.escape(away)}</td><td>{summary_away['media']:.1f}</td>
           <td>{summary_away['rango_esperado_p10_p90'][0]:.0f} - {summary_away['rango_esperado_p10_p90'][1]:.0f}</td></tr>""")
     if summary_total:
         rows.append(f"""
@@ -161,7 +162,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
 
     if report.get("corners"):
         corners_section = (
-            _stat_card("Córners", report["corners"]["local"], report["corners"]["visitante"], report["corners"]["total"])
+            _stat_card("Córners", report["corners"]["local"], report["corners"]["visitante"], report["corners"]["total"], home=home, away=away)
             + _over_under_card("Over/Under córners", report["over_under_corners"], "córners")
         )
     else:
@@ -169,7 +170,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
 
     if report.get("tiros_al_arco"):
         shots_section = (
-            _stat_card("Tiros al arco", report["tiros_al_arco"]["local"], report["tiros_al_arco"]["visitante"], report["tiros_al_arco"]["total"])
+            _stat_card("Tiros al arco", report["tiros_al_arco"]["local"], report["tiros_al_arco"]["visitante"], report["tiros_al_arco"]["total"], home=home, away=away)
             + _over_under_card("Over/Under tiros al arco", report["over_under_tiros"], "tiros al arco")
         )
     else:
@@ -177,14 +178,14 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
 
     if report.get("tarjetas"):
         cards_section = (
-            _stat_card("Tarjetas amarillas", report["tarjetas"]["amarillas_local"], report["tarjetas"]["amarillas_visitante"], report["tarjetas"]["amarillas_total"])
+            _stat_card("Tarjetas amarillas", report["tarjetas"]["amarillas_local"], report["tarjetas"]["amarillas_visitante"], report["tarjetas"]["amarillas_total"], home=home, away=away)
             + _over_under_card("Over/Under tarjetas amarillas", report["over_under_tarjetas"], "tarjetas amarillas")
             + f"""
     <div class="card">
       <h2>Tarjetas rojas (media esperada)</h2>
       <div class="goals-summary">
-        <div>Local<span>{report['tarjetas']['rojas_local']['media']:.2f}</span></div>
-        <div>Visitante<span>{report['tarjetas']['rojas_visitante']['media']:.2f}</span></div>
+        <div>{html.escape(home)}<span>{report['tarjetas']['rojas_local']['media']:.2f}</span></div>
+        <div>{html.escape(away)}<span>{report['tarjetas']['rojas_visitante']['media']:.2f}</span></div>
       </div>
     </div>"""
         )
@@ -225,9 +226,9 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
   {ajuste_banner}
   <div class="card">
     <h2>1X2</h2>
-    {_bar(f"Local ({html.escape(home)})", x1x2["local"], "#6366f1")}
+    {_bar(home, x1x2["local"], "#6366f1")}
     {_bar("Empate", x1x2["empate"], "#94a3b8")}
-    {_bar(f"Visitante ({html.escape(away)})", x1x2["visitante"], "#ef4444")}
+    {_bar(away, x1x2["visitante"], "#ef4444")}
   </div>
 
   <div class="card">
@@ -254,8 +255,8 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     muchas veces en las mismas condiciones. Alimenta el cálculo del resto de mercados (1X2,
     over/under, marcador exacto de arriba).</p>
     <div class="goals-summary">
-      <div>Local<span>{ge['local']:.2f}</span></div>
-      <div>Visitante<span>{ge['visitante']:.2f}</span></div>
+      <div>{html.escape(home)}<span>{ge['local']:.2f}</span></div>
+      <div>{html.escape(away)}<span>{ge['visitante']:.2f}</span></div>
       <div>Total<span>{ge['total']:.2f}</span></div>
     </div>
   </div>
@@ -274,4 +275,4 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     pérdida de dinero. Ver README.md para las limitaciones completas del modelo.
   </div>
 """
-    return wrap_page(f"Pronóstico: {home} vs {away}", body)
+    return wrap_page(f"Pronóstico: {home} vs {away}", body, redirect_home_on_reload=True)

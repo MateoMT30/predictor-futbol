@@ -25,7 +25,8 @@ COLOMBIA_TZ = ZoneInfo("America/Bogota")
 # (mejor eso que una traducción inventada o incorrecta).
 TEAM_NAMES_ES = {
     "Belgium": "Bélgica", "Senegal": "Senegal", "United States": "Estados Unidos",
-    "Bosnia and Herzegovina": "Bosnia y Herzegovina", "Spain": "España",
+    "Bosnia and Herzegovina": "Bosnia y Herzegovina",
+    "Bosnia-Herzegovina": "Bosnia y Herzegovina", "Spain": "España",
     "Austria": "Austria", "Portugal": "Portugal", "Croatia": "Croacia",
     "Switzerland": "Suiza", "Algeria": "Argelia", "Australia": "Australia",
     "Egypt": "Egipto", "Argentina": "Argentina", "Cape Verde Islands": "Cabo Verde",

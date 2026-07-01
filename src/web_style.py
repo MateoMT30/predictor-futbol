@@ -148,10 +148,35 @@ MODERN_CSS = """
 """
 
 
-def wrap_page(title: str, body_html: str, subtitle_meta: str = "") -> str:
+# Script que, SOLO cuando la página se recarga (F5 / botón refrescar), lleva
+# al inicio en vez de re-ejecutar la predicción (que es lenta y no tiene
+# sentido repetir). Usa el tipo de navegación del navegador: 'reload' vs
+# 'navigate'/'back_forward', así que abrir el reporte normalmente NO redirige;
+# solo el refresco explícito lo hace.
+_RELOAD_TO_HOME_SCRIPT = """
+<script>
+(function () {
+  try {
+    var navs = performance.getEntriesByType ? performance.getEntriesByType('navigation') : [];
+    var type = navs.length ? navs[0].type
+             : (performance.navigation && performance.navigation.type === 1 ? 'reload' : '');
+    if (type === 'reload' && location.pathname !== '/') {
+      location.replace('/');
+    }
+  } catch (e) {}
+})();
+</script>"""
+
+
+def wrap_page(title: str, body_html: str, subtitle_meta: str = "",
+              redirect_home_on_reload: bool = False) -> str:
     """Envuelve un fragmento de contenido en un documento HTML completo
     (con <head>, viewport, favicon emoji), consistente para todas las
-    páginas de la app y del reporte."""
+    páginas de la app y del reporte.
+
+    redirect_home_on_reload: si True, al recargar la página (F5) se redirige
+    al inicio en lugar de recalcular. Se usa en la página del reporte."""
+    reload_script = _RELOAD_TO_HOME_SCRIPT if redirect_home_on_reload else ""
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -163,5 +188,6 @@ def wrap_page(title: str, body_html: str, subtitle_meta: str = "") -> str:
 </head>
 <body>
 {body_html}
+{reload_script}
 </body>
 </html>"""

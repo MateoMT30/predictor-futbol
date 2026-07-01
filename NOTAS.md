@@ -203,6 +203,22 @@ daba timeouts y OOM (ver bug #7). Por eso el parseo NO ocurre en la web:
    AWARDED, CANCELLED, POSTPONED, SUSPENDED), así los de hoy siguen visibles
    aunque estén en juego.
 
+9. **Bosnia salía "sin datos" de FIFA** aunque el cache los tenía.
+   football-data.org escribe el nombre "Bosnia-Herzegovina" pero FIFA_CODES
+   tenía la key "Bosnia and Herzegovina" → el lookup fallaba. Fix:
+   `_code_for_team` con normalización tolerante (quita acentos, unifica
+   separadores y la conjunción "and"), usado en get_match_stats_for_team.
+
+## Cambios de UI recientes
+
+- **Nombres de equipo en vez de "Local/Visitante"** en las tarjetas del
+  reporte (córners, tiros al arco, tarjetas, goles esperados, 1X2).
+  `_stat_card` recibe `home`/`away` (report_html.py).
+- **Al recargar (F5) la página del reporte se va al inicio** en vez de
+  recalcular. `wrap_page(..., redirect_home_on_reload=True)` inyecta un
+  script que detecta el tipo de navegación 'reload' (web_style.py); solo se
+  activa en la página del reporte (render_html_report).
+
 ## Decisiones de producto (por qué se ve como se ve)
 
 - **Sin cuotas/value bets en la web** — se sacó del flujo principal

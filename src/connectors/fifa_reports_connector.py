@@ -90,6 +90,35 @@ FIFA_CODES = {
 _link_cache: dict = {}  # {"links": (timestamp, [urls])}
 _pdf_cache: dict = {}   # {url: parsed_stats_dict}
 
+
+def _normalize_team(name: str) -> str:
+    """Normaliza un nombre de país para poder cruzar fuentes que lo escriben
+    distinto (ej. football-data.org usa 'Bosnia-Herzegovina' pero el catálogo
+    FIFA_CODES tiene 'Bosnia and Herzegovina'). Quita acentos, pasa a
+    minúsculas, y unifica separadores y la conjunción 'and'."""
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", name)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.lower().replace("&", " and ")
+    s = re.sub(r"[-_]", " ", s)
+    s = re.sub(r"\band\b", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+# Índice normalizado nombre->código, para tolerar variantes de escritura.
+_NORM_FIFA_CODES = {_normalize_team(k): v for k, v in FIFA_CODES.items()}
+
+
+def _code_for_team(team_name: str) -> Optional[str]:
+    """Código FIFA de 3 letras para un equipo, tolerante a cómo se escriba el
+    nombre (exacto primero, luego normalizado). None si no está en el catálogo."""
+    code = FIFA_CODES.get(team_name)
+    if code:
+        return code
+    return _NORM_FIFA_CODES.get(_normalize_team(team_name))
+
 # --- Cache en disco (JSON) ---------------------------------------------------
 # Parsear los PDFs de FIFA cuesta ~8-15s cada uno y es demasiado lento/pesado
 # para hacerlo DENTRO de un request en Render free (se veían timeouts y OOM).
@@ -442,7 +471,7 @@ def get_match_stats_for_team(team_name: str) -> list:
     nunca lanza excepción (uso defensivo: esto es un enriquecimiento
     opcional, no debe poder romper el flujo principal de predicción).
     """
-    code = FIFA_CODES.get(team_name)
+    code = _code_for_team(team_name)
     if not code:
         return []
     try:
