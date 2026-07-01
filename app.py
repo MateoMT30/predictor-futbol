@@ -50,6 +50,7 @@ from flask import Flask, render_template_string, request, redirect, url_for
 
 from src.connectors.csv_connector import CSVConnector
 from src.connectors.football_data_connector import FootballDataConnector, COMPETITIONS
+from src.connectors.fifa_reports_connector import enrich_with_fifa_reports
 from src.data_loader import load_from_connector
 from src.ratings import EloRatingSystem, RatingsConfig
 from src.models.goles import DixonColesModel, GoalsModelConfig
@@ -399,6 +400,17 @@ def predecir():
 
     if matches_df.empty:
         return "No hay histórico suficiente para esta competición todavía.", 404
+
+    # Enriquecimiento opcional con córners/tiros al arco oficiales de FIFA
+    # (ver src/connectors/fifa_reports_connector.py) — football-data.org
+    # no los trae. Solo se intenta para Mundial (los reportes PMSR son
+    # específicos de esa competición) y nunca puede romper la predicción:
+    # si la fuente falla, matches_df simplemente se queda como estaba.
+    if competition == "WC":
+        try:
+            matches_df = enrich_with_fifa_reports(matches_df, {local, visitante})
+        except Exception:
+            pass
 
     return _run_prediction(matches_df, local, visitante)
 

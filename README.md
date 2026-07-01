@@ -194,12 +194,37 @@ equipos (el Mundial ampliado a 48 selecciones). `app.py` fija
 aun así ves ese error con una competición muy grande, considera acotar más
 el histórico (`--datos`/parámetro de fecha) o subir de plan.
 
-**Limitación de la fuente de datos gratuita:** football-data.org entrega
-resultados y goles, pero no córners/tiros/tarjetas. En el flujo automático
-(vía API), esos mercados se muestran con un aviso explícito de "sin datos
-suficientes" en vez de inventar un cero — es una limitación de la fuente
-gratuita, no un bug. Para tenerlos, usa el modo avanzado con un CSV propio
-que sí incluya esas columnas.
+**Córners y tiros al arco (Mundial): sí hay fuente automática y gratuita.**
+football-data.org entrega resultados y goles, pero no córners/tiros. Tras
+investigar varias alternativas (API-Football, football-data.co.uk, FBref,
+WC2026API, Statorium, TheStatsAPI — ninguna gratuita/disponible/legítima
+para esto), encontramos que **la propia FIFA publica reportes oficiales en
+PDF** ("Post Match Summary Report") para cada partido del Mundial 2026, de
+descarga pública, sin API key:
+https://www.fifatrainingcentre.com/en/fifa-world-cup-2026/match-report-hub.php
+
+`src/connectors/fifa_reports_connector.py` descarga y parsea estos PDFs
+(solo los del equipo local/visitante del partido consultado, no el
+torneo completo) para rellenar córners y tiros al arco automáticamente
+cuando la competición es el Mundial (`WC`). El cruce con el histórico de
+football-data.org se hace por **fecha del partido**, no por nombre de
+equipo — dos fuentes distintas pueden deletrear un país distinto (ej.
+"South Korea" vs "Korea Republic"), pero es prácticamente imposible que
+un mismo equipo juegue dos partidos oficiales el mismo día.
+
+**Tarjetas amarillas/rojas: siguen sin fuente automática.** Los reportes
+de FIFA son tácticos/analíticos (posesión, xG, líneas de pase), no
+disciplinarios — no incluyen tarjetas ni faltas. Ese mercado sigue
+mostrando "sin datos suficientes" en el flujo automático; solo está
+disponible cargando tu propio CSV en el modo avanzado.
+
+**Por qué esta fuente sí es legítima y otras (365Scores, SofaScore, etc.)
+no las usamos:** es la propia FIFA, organizadora del torneo, publicando
+sus reportes para consulta pública general (prensa, cuerpos técnicos), sin
+mención de restricciones de acceso automatizado. Apps de terceros como
+365Scores no publican una API pública ni autorizan scraping de su backend
+interno — ver la sección de limitaciones más abajo para el detalle de esa
+distinción.
 
 ## Cómo cargar tus propios datos
 
