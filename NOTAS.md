@@ -132,7 +132,21 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
    `extract_text` recurre dentro de ellos y los tokeniza (ahí explotaba).
    `_page_is_light` ahora suma también el tamaño de los Form XObjects
    referenciados en `/Resources /XObject` y descarta la página si el total
-   supera el umbral.
+   supera el umbral. **Tercera iteración (definitiva)**: aun con eso, pypdf
+   volvió a explotar pero en OTRO punto (`_cmap._parse_encoding`, parseando
+   la tabla de caracteres de una fuente). Conclusión: no se puede acotar el
+   OOM por adelantado dentro del mismo proceso — pypdf puede reventar en
+   content streams, XObjects, fuentes/CMaps, etc. Solución robusta: el
+   parseo del PDF corre en un **subproceso aislado**
+   (`_pdf_extract_worker.py`, lanzado con `fork` en Linux/Render). El hijo
+   se marca como blanco del OOM killer (`/proc/self/oom_score_adj = 1000`),
+   así que si revienta la RAM el kernel mata al subproceso y NO al worker
+   web; el padre lo detecta como muerte sin dato y sigue sin esas
+   estadísticas. Se usa `fork` (no `spawn`) a propósito: `spawn` re-importa
+   el `__main__` del padre, que bajo gunicorn re-ejecutaría el arranque. En
+   Windows (dev, sin `fork` y con RAM de sobra) se parsea inline. Los
+   filtros de páginas pesadas (XObjects) y de tamaño de descarga se
+   mantienen como primera línea de defensa dentro del subproceso.
 
 ## Decisiones de producto (por qué se ve como se ve)
 

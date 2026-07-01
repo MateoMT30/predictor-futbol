@@ -41,7 +41,7 @@ suficientes" en el reporte cuando no hay fuente).
    (un reporte de un partido ya jugado no cambia).
 """
 
-import io
+import multiprocessing
 import re
 import time
 from datetime import datetime
@@ -49,6 +49,8 @@ from typing import Optional
 
 import pandas as pd
 import requests
+
+from . import _pdf_extract_worker
 
 try:
     from pypdf import PdfReader
@@ -85,60 +87,62 @@ _link_cache: dict = {}  # {"links": (timestamp, [urls])}
 _pdf_cache: dict = {}   # {url: parsed_stats_dict}
 
 # Límites de memoria — Render free tiene solo 512 MB y numpy/pandas ya
-# cargados ocupan una parte. Los PMSR de FIFA traen páginas con gráficos
-# vectoriales pesados (mapas de pases, heatmaps): sus content streams son
-# enormes y, al tokenizarlos, pypdf explota la memoria 10-100x (se vio un
-# SIGKILL/OOM real que mata al worker entero — y como OOM no lanza excepción
-# Python, el try/except de _parse_pdf NO lo atrapa; hay que evitarlo ANTES).
-# El texto que sí necesitamos (Key Statistics / Set Plays) vive en páginas
-# de tablas, que son livianas; las páginas de gráficos se saltan por tamaño.
+# cargados ocupan una parte. Parsear los PMSR de FIFA con pypdf puede
+# disparar la memoria de forma impredecible (content streams pesados, Form
+# XObjects con gráficos, o CMaps patológicas de una fuente — se vieron OOM
+# reales en `_parse_content_stream` y en `_cmap._parse_encoding`). Un OOM
+# manda SIGKILL: NO se puede atrapar con try/except (no lanza excepción,
+# mata el proceso). Por eso el parseo del PDF corre en un **subproceso
+# aislado con tope de memoria** (ver `_pdf_extract_worker.py`): si revienta,
+# muere solo el subproceso y este worker web sobrevive.
 _MAX_PDF_BYTES = 15 * 1024 * 1024          # no descargar PDFs gigantes
-_MAX_PAGE_CONTENT_BYTES = 800 * 1024       # saltar páginas de gráficos pesados
+_PDF_PARSE_TIMEOUT = 25                     # segundos antes de matar el subproceso
+
+# Se usa 'fork' (Linux/Render): NO re-importa el __main__ del padre (a
+# diferencia de 'spawn', que bajo gunicorn re-ejecutaría el arranque), y es
+# barato. Si un PDF revienta la RAM, el kernel mata al hijo (que se marca
+# como blanco del OOM killer) y el worker web sobrevive. En Windows (solo
+# dev local, con RAM de sobra) 'fork' no existe: ahí se parsea inline.
+_USE_SUBPROCESS = "fork" in multiprocessing.get_all_start_methods()
+_mp_ctx = multiprocessing.get_context("fork") if _USE_SUBPROCESS else None
 
 
-def _page_is_light(page) -> bool:
-    """True si el "peso" total de la página es pequeño. Solo esas páginas
-    (tablas de estadísticas) se pasan a extract_text; las de gráficos
-    vectoriales se saltan para no reventar la RAM.
+def _extract_pdf_text_isolated(content: bytes) -> Optional[str]:
+    """Extrae el texto del PDF sin arriesgar al worker web. En Linux/Render
+    corre el parseo en un subproceso 'fork' aislado; si ese subproceso muere
+    por OOM (o excede el timeout, o falla), devuelve None y el padre sigue
+    vivo. En plataformas sin fork (Windows dev) parsea inline."""
+    if not _USE_SUBPROCESS:
+        try:
+            return _pdf_extract_worker.extract_light_text(content)
+        except Exception:
+            return None
 
-    El peso NO es solo el content stream propio de la página: los gráficos
-    pesados de estos reportes (heatmaps, mapas de pases) viven en **Form
-    XObjects** que la página solo referencia, y extract_text recurre dentro
-    de ellos y los tokeniza — ahí es donde explotaba la memoria aunque el
-    stream propio de la página fuera chico. Por eso se suma también el
-    tamaño de los Form XObjects referenciados.
+    parent_conn, child_conn = _mp_ctx.Pipe(duplex=False)
+    proc = _mp_ctx.Process(
+        target=_pdf_extract_worker._child_main,
+        args=(content, child_conn),
+    )
+    proc.start()
+    child_conn.close()  # el extremo de escritura queda solo en el hijo
 
-    Ante cualquier duda al medir, se considera pesada (se salta): el costo
-    de un falso negativo (perder una tabla) es mucho menor que un OOM que
-    tumba el worker."""
+    result: Optional[str] = None
     try:
-        total = 0
-        contents = page.get_contents()
-        if contents is not None:
-            total += len(contents.get_data())
+        if parent_conn.poll(_PDF_PARSE_TIMEOUT):
+            result = parent_conn.recv()
+    except EOFError:
+        # El hijo murió (OOM/SIGKILL) sin enviar nada.
+        result = None
+    finally:
+        parent_conn.close()
+        proc.join(1)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join()
 
-        resources = page.get("/Resources")
-        if resources is not None:
-            xobjects = resources.get_object().get("/XObject")
-            if xobjects is not None:
-                for name in xobjects.get_object():
-                    try:
-                        xobj = xobjects[name].get_object()
-                        # Solo los Form XObjects tienen content stream que
-                        # extract_text tokeniza; las imágenes rasterizadas
-                        # (/Image) no las recorre, así que no cuentan.
-                        if xobj.get("/Subtype") == "/Form":
-                            total += len(xobj.get_data())
-                    except Exception:
-                        # No se pudo medir un XObject -> asumir que es el
-                        # pesado y descartar la página entera.
-                        return False
-                    if total > _MAX_PAGE_CONTENT_BYTES:
-                        return False
-
-        return total <= _MAX_PAGE_CONTENT_BYTES
-    except Exception:
-        return False
+    if not isinstance(result, str):
+        return None
+    return result
 
 
 def _fetch_report_links() -> list:
@@ -184,15 +188,14 @@ def _parse_pdf(url: str) -> Optional[dict]:
                 return None
             chunks.append(chunk)
         content = b"".join(chunks)
-        reader = PdfReader(io.BytesIO(content))
-        # Solo se extrae texto de páginas livianas (tablas). Las páginas de
-        # gráficos vectoriales se saltan ANTES de tokenizarlas, que es lo que
-        # causaba el OOM/SIGKILL. Igual devuelven texto suficiente porque las
-        # estadísticas viven en las páginas de tablas.
-        full_text = "\n".join(
-            page.extract_text() or "" for page in reader.pages if _page_is_light(page)
-        )
     except Exception:
+        _pdf_cache[url] = None
+        return None
+
+    # El parseo real (que es lo que puede reventar la memoria) se hace en un
+    # subproceso aislado con tope de RAM, para que un OOM no mate al worker.
+    full_text = _extract_pdf_text_isolated(content)
+    if not full_text:
         _pdf_cache[url] = None
         return None
 
