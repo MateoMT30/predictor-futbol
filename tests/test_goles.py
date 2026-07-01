@@ -62,3 +62,17 @@ def test_manual_adjustment_reflected_in_market_probabilities(sample_matches):
     # Con menos goles esperados del local, su probabilidad de ganar debe bajar
     base_report = model.market_probabilities("Colombia", "Argentina")
     assert report["1x2"]["local"] < base_report["1x2"]["local"]
+
+
+def test_most_probable_score_is_integer_and_consistent_with_matrix(sample_matches):
+    model = DixonColesModel(GoalsModelConfig()).fit(sample_matches)
+    matrix = model.score_matrix("Colombia", "Argentina")
+    report = model.market_probabilities("Colombia", "Argentina")
+    mp = report["marcador_mas_probable"]
+
+    assert isinstance(mp["local"], int)
+    assert isinstance(mp["visitante"], int)
+    # Debe ser exactamente la celda de mayor probabilidad de la matriz,
+    # no un redondeo del promedio (goles_esperados).
+    assert mp["probabilidad"] == pytest.approx(matrix.max(), rel=1e-9)
+    assert matrix[mp["local"], mp["visitante"]] == matrix.max()

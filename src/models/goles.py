@@ -284,11 +284,26 @@ class DixonColesModel:
 
         lam_home, lam_away = self.expected_goals(home, away, home_adjustment, away_adjustment)
 
+        # Marcador exacto más probable: a diferencia de "goles esperados"
+        # (un promedio, ej. 2.31 — nunca un resultado real posible), esto
+        # es la celda con mayor probabilidad de la matriz conjunta, es
+        # decir, el marcador entero específico (ej. "2-1") que el modelo
+        # considera más probable entre todos los posibles. Sigue siendo
+        # una probabilidad (normalmente bajo 25-35% para cualquier
+        # marcador puntual, porque hay muchos marcadores posibles), pero
+        # es un dato concreto en vez de un promedio.
+        idx_home, idx_away = np.unravel_index(np.argmax(matrix), matrix.shape)
+        marcador_probable = {
+            "local": int(idx_home), "visitante": int(idx_away),
+            "probabilidad": float(matrix[idx_home, idx_away]),
+        }
+
         return {
             "1x2": {"local": float(p_home_win), "empate": float(p_draw), "visitante": float(p_away_win)},
             "ambos_anotan": {"si": float(btts_yes), "no": float(btts_no)},
             "over_under_goles": totals,
             "goles_esperados": {"local": lam_home, "visitante": lam_away, "total": lam_home + lam_away},
+            "marcador_mas_probable": marcador_probable,
             "ajuste_manual_aplicado": {"local": home_adjustment, "visitante": away_adjustment},
         }
 

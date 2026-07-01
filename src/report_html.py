@@ -73,22 +73,21 @@ def _no_data_card(title: str) -> str:
 def _over_under_card(title: str, lines: dict, metric_label: str) -> str:
     """
     metric_label: nombre en español de lo que se está contando (ej.
-    "goles", "córners"), usado en la explicación de qué significa cada
-    línea — este mercado es el que más confunde a alguien que no viene
-    del mundo de las apuestas.
+    "goles", "córners").
+
+    Solo se muestra la probabilidad de "más de X" (">X"). No se repite el
+    "menos de X": es matemáticamente el complemento (100% - "más de X"),
+    mostrarlo en una segunda columna era información redundante.
     """
     rows = "".join(
-        f"<tr><td>{line}</td><td>{_pct(probs['over'])}</td><td>{_pct(probs['under'])}</td></tr>"
+        f"<tr><td>&gt;{line} {html.escape(metric_label)}</td><td>{_pct(probs['over'])}</td></tr>"
         for line, probs in lines.items()
     )
     return f"""
     <div class="card">
       <h2>{html.escape(title)}</h2>
-      <p class="muted">"Over X" = probabilidad de que el total de {html.escape(metric_label)}
-      del partido termine por ENCIMA de X. "Under X" = por DEBAJO de X. Ej.: si la línea es 2.5,
-      "Over 2.5" significa 3 {html.escape(metric_label)} o más.</p>
       <table>
-        <thead><tr><th>Línea</th><th>Over</th><th>Under</th></tr></thead>
+        <thead><tr><th>Línea</th><th>Probabilidad</th></tr></thead>
         <tbody>{rows}</tbody>
       </table>
     </div>"""
@@ -108,6 +107,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     x1x2 = report["1x2"]
     btts = report["ambos_anotan"]
     ge = report["goles_esperados"]
+    mp = report.get("marcador_mas_probable")
 
     value_bets_card = ""
     if value_bets:
@@ -200,12 +200,23 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     {_bar("No", btts["no"], "#ef4444")}
   </div>
 
+  {f'''<div class="card">
+    <h2>Marcador exacto más probable</h2>
+    <div class="goals-summary">
+      <div>Resultado<span>{mp['local']}-{mp['visitante']}</span></div>
+      <div>Probabilidad<span>{_pct(mp['probabilidad'])}</span></div>
+    </div>
+    <p class="muted" style="margin-top:10px;">De los miles de marcadores posibles que simula el
+    modelo, este es el único marcador entero específico con mayor probabilidad individual — su
+    porcentaje suele ser bajo (a veces menos de 15%) porque compite contra muchos otros
+    resultados posibles, no porque el modelo esté poco seguro.</p>
+  </div>''' if mp else ''}
+
   <div class="card">
-    <h2>Goles esperados</h2>
-    <p class="muted">Es un promedio estadístico (a veces llamado "xG"), no una predicción de
-    marcador exacto — nadie anota fracciones de gol. "2.31" significa: si este partido se
-    jugara muchas veces en las mismas condiciones, este equipo anotaría en promedio 2.31 goles
-    por partido. Es el número que alimenta el resto de mercados de goles (1X2, over/under, etc.).</p>
+    <h2>Promedio de goles (referencia)</h2>
+    <p class="muted">No es una predicción de marcador — es el promedio si el partido se jugara
+    muchas veces en las mismas condiciones. Alimenta el cálculo del resto de mercados (1X2,
+    over/under, marcador exacto de arriba).</p>
     <div class="goals-summary">
       <div>Local<span>{ge['local']:.2f}</span></div>
       <div>Visitante<span>{ge['visitante']:.2f}</span></div>

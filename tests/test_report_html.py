@@ -22,6 +22,7 @@ def _fake_report():
             "amarillas_total": _fake_summary(5), "rojas_local": _fake_summary(0.1), "rojas_visitante": _fake_summary(0.1),
         },
         "over_under_tarjetas": {3.5: {"over": 0.4, "under": 0.6}},
+        "marcador_mas_probable": {"local": 2, "visitante": 1, "probabilidad": 0.18},
     }
 
 
@@ -61,3 +62,13 @@ def test_render_html_report_shows_no_data_message_when_stats_missing():
     assert html_doc.count("Sin datos suficientes") == 3
     # No debe mostrar un 0.0 falso donde no hay dato
     assert "media 0.0" not in html_doc.lower()
+
+
+def test_render_html_report_shows_exact_score_and_no_redundant_under_column():
+    report = _fake_report()
+    html_doc = render_html_report(report, [])
+    assert "2-1" in html_doc
+    assert "Marcador exacto más probable" in html_doc
+    # La tabla de over/under ya no repite "Under" como columna separada
+    assert "<th>Under</th>" not in html_doc
+    assert "&gt;2.5 goles" in html_doc

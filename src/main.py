@@ -98,6 +98,7 @@ def build_report(
         "handicap": goals_report["handicap"],
         "ambos_anotan": goals_report["ambos_anotan"],
         "goles_esperados": goals_report["goles_esperados"],
+        "marcador_mas_probable": goals_report["marcador_mas_probable"],
         "ajuste_manual_aplicado": goals_report["ajuste_manual_aplicado"],
         "over_under_goles": {
             line: over_under_probability(sim_result.goals_home + sim_result.goals_away, line)
