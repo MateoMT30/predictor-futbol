@@ -64,6 +64,41 @@ def test_manual_adjustment_reflected_in_market_probabilities(sample_matches):
     assert report["1x2"]["local"] < base_report["1x2"]["local"]
 
 
+def test_regularization_prevents_absurd_lambdas_with_sparse_data():
+    """
+    Reproduce el bug real: un torneo con muchos equipos y pocos partidos
+    por equipo (ej. un Mundial recién empezado) puede llevar la MLE de
+    Dixon-Coles a estimar goles esperados absurdos para un equipo con una
+    sola goleada en su historial. La regularización debe evitarlo.
+    """
+    import pandas as pd
+    rows = []
+    # Equipo "Golstate" con una sola goleada 7-0 (poquísima evidencia)
+    rows.append({
+        "fecha": "2026-06-01", "liga": "Test",
+        "equipo_local": "Golstate", "equipo_visitante": "Debil",
+        "goles_local": 7, "goles_visitante": 0,
+    })
+    # Un grupo de equipos "normales" que se enfrentan entre sí varias
+    # veces, para darle al modelo suficiente contexto de escala general.
+    normales = ["A", "B", "C", "D", "E"]
+    for i in range(15):
+        h, a = normales[i % 5], normales[(i + 1) % 5]
+        rows.append({
+            "fecha": f"2026-05-{(i % 28) + 1:02d}", "liga": "Test",
+            "equipo_local": h, "equipo_visitante": a,
+            "goles_local": 1, "goles_visitante": 1,
+        })
+    df = pd.DataFrame(rows)
+    df["fecha"] = pd.to_datetime(df["fecha"])
+
+    model = DixonColesModel(GoalsModelConfig()).fit(df)
+    lam_home, _ = model.expected_goals("Golstate", "A")
+    # Sin regularización este valor puede dispararse a >15; con ella debe
+    # quedarse en un rango futbolísticamente plausible.
+    assert lam_home < 6.0
+
+
 def test_most_probable_score_is_integer_and_consistent_with_matrix(sample_matches):
     model = DixonColesModel(GoalsModelConfig()).fit(sample_matches)
     matrix = model.score_matrix("Colombia", "Argentina")

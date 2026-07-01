@@ -59,6 +59,18 @@ class GoalsModelConfig:
     xi: float = 0.0018          # decaimiento temporal (Dixon-Coles)
     max_goals: int = 10          # tope de la matriz de resultados simulada
     low_score_correction: bool = True
+    # Regularización L2 (ridge) sobre ataque/defensa: penaliza que un
+    # equipo con pocos partidos en el histórico termine con un parámetro
+    # extremo solo porque hay poca evidencia para contradecirlo. Sin esto,
+    # torneos que recién empiezan (ej. un Mundial con muchos equipos que
+    # apenas jugaron 3-4 partidos) pueden dar goles esperados absurdos —
+    # se observaron casos reales de 8.76 e incluso 24.5 goles esperados
+    # en un partido antes de este ajuste. El valor 1.5 se calibró
+    # empíricamente contra el histórico real del Mundial 2026: mantiene
+    # el máximo observado en ~6 goles esperados (Alemania, tras un 7-1
+    # real, contra el rival más débil del torneo) sin aplanar partidos
+    # normales (ej. Argentina vs un rival débil sigue dando ventaja clara).
+    regularization: float = 1.5
 
 
 def _tau(goals_home: int, goals_away: int, lambda_home: float, lambda_away: float, rho: float) -> float:
@@ -144,7 +156,21 @@ class DixonColesModel:
                     log_tau[i] = np.log(max(t, 1e-10))
 
             ll = ll_home + ll_away + log_tau
-            return -np.sum(weights * ll)
+            neg_ll = -np.sum(weights * ll)
+
+            # Regularización L2 (equivalente a un prior Gaussiano centrado
+            # en 0 sobre ataque/defensa — "todo equipo es de fuerza
+            # promedio hasta que los datos digan lo contrario"). Sin esto,
+            # un equipo con 0-1 partidos en el histórico no tiene suficiente
+            # verosimilitud "empujando en contra" y el optimizador puede
+            # llevar su parámetro a valores extremos que técnicamente
+            # mejoran la verosimilitud en una muestra minúscula pero no
+            # generalizan — el síntoma visible es un "goles esperados"
+            # absurdo (se observó 8.76 en un caso real). gamma y rho no se
+            # regularizan: son un solo parámetro compartido por todo el
+            # dataset, ya están respaldados por muchísimas observaciones.
+            penalty = self.config.regularization * np.sum(attack ** 2 + defence ** 2)
+            return neg_ll + penalty
 
         # Punto inicial neutro: todos los equipos "promedio", sin ventaja
         # de local ni corrección de marcador bajo. La optimización converge
