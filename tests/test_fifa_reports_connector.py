@@ -3,7 +3,9 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from src.connectors.fifa_reports_connector import _extract_stats, _links_for_code, enrich_with_fifa_reports
+from src.connectors.fifa_reports_connector import (
+    _extract_stats, _links_for_code, enrich_with_fifa_reports, get_team_summary_stats,
+)
 
 
 SAMPLE_PDF_TEXT = """Mexico2 - 0
@@ -21,6 +23,8 @@ Total 57.1% 6.8% 36.1% Total
 2 Goals 0
 1.78 xG (Expected Goals) 0.1
 16 (4) Attempts at Goal (On Target) 3 (2)
+547 (495) Total Passes (Complete) 351 (290)
+90 % Pass Completion % 83 %
 
 Set Plays Mexico
 36
@@ -63,6 +67,22 @@ def test_extract_stats_parses_teams_shots_and_corners():
     assert stats["tiros_arco_visitante"] == 2
     assert stats["corners_local"] == 3
     assert stats["corners_visitante"] == 1
+
+
+def test_extract_stats_parses_xg_possession_passes_and_set_plays():
+    stats = _extract_stats(SAMPLE_PDF_TEXT)
+    assert stats["xg_local"] == 1.78
+    assert stats["xg_visitante"] == 0.1
+    assert stats["posesion_local"] == 57.1
+    assert stats["posesion_visitante"] == 36.1
+    assert stats["pases_local"] == 547
+    assert stats["pases_completos_local"] == 495
+    assert stats["precision_pase_local"] == 90
+    assert stats["precision_pase_visitante"] == 83
+    assert stats["tiros_libres_local"] == 12
+    assert stats["tiros_libres_visitante"] == 13
+    assert stats["penales_local"] == 0
+    assert stats["penales_visitante"] == 0
 
 
 def test_extract_stats_returns_none_for_unrecognized_format():
@@ -130,3 +150,30 @@ def test_enrich_with_fifa_reports_never_raises_when_source_fails():
     ):
         enriched = enrich_with_fifa_reports(matches_df, {"Mexico"})
     assert enriched.iloc[0]["corners_local"] is None
+
+
+def test_get_team_summary_stats_averages_own_side_across_matches():
+    reports = [
+        {"equipo_local": "Mexico", "equipo_visitante": "South Africa",
+         "xg_local": 1.78, "xg_visitante": 0.1, "posesion_local": 57.1, "posesion_visitante": 36.1,
+         "corners_local": 3, "corners_visitante": 1},
+        {"equipo_local": "Czechia", "equipo_visitante": "Mexico",
+         "xg_local": 0.5, "xg_visitante": 2.22, "posesion_local": 40.0, "posesion_visitante": 55.0,
+         "corners_local": 5, "corners_visitante": 4},
+    ]
+    with patch(
+        "src.connectors.fifa_reports_connector.get_match_stats_for_team",
+        return_value=reports,
+    ):
+        summary = get_team_summary_stats("Mexico")
+
+    assert summary["partidos_con_dato"] == 2
+    # Mexico jugo de local en el primer partido (xg=1.78) y de visitante
+    # en el segundo (xg=2.22) -> promedio (1.78+2.22)/2 = 2.0
+    assert summary["xg"] == 2.0
+    assert summary["corners"] == pytest.approx((3 + 4) / 2)
+
+
+def test_get_team_summary_stats_returns_none_without_reports():
+    with patch("src.connectors.fifa_reports_connector.get_match_stats_for_team", return_value=[]):
+        assert get_team_summary_stats("EquipoInexistente") is None

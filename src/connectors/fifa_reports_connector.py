@@ -164,16 +164,28 @@ def _extract_stats(text: str) -> Optional[dict]:
         text,
     )
 
-    def _corners_for_team(team_section_title: str) -> Optional[int]:
+    # --- Página "Key Statistics": posesión, xG, pases, % de acierto ---
+    # Estos números son contexto informativo (se muestran en el reporte,
+    # ver report_html.py), no alimentan ningún modelo estadístico — igual
+    # criterio que la tabla de posiciones y goleadores: dato real de FIFA,
+    # mostrado tal cual, sin usarlo para inferir otras estadísticas.
+    possession = re.search(r'Total\s*([\d.]+)%.*?([\d.]+)%\s*Total', text, re.DOTALL)
+    xg = re.search(r'([\d.]+)\s*xG \(Expected Goals\)\s*([\d.]+)', text)
+    passes = re.search(
+        r'(\d+)\s*\((\d+)\)\s*Total Passes \(Complete\)\s*(\d+)\s*\((\d+)\)', text,
+    )
+    pass_pct = re.search(r'(\d+)\s*%\s*Pass Completion %\s*(\d+)\s*%', text)
+
+    def _set_play_stat_for_team(team_section_title: str, label: str) -> Optional[int]:
         # El límite de fin de sección NO puede ser "Free Kicks": ese texto
         # ya aparece antes, dentro de "Total Free Kicks", y cortaría la
-        # búsqueda antes de llegar a "Total Corners". "Total Throw Ins"
-        # sí aparece de forma fiable después de "Total Corners" en el
-        # layout de este reporte.
+        # búsqueda antes de llegar a las estadísticas siguientes. "Total
+        # Throw Ins" sí aparece de forma fiable al final de este bloque
+        # resumen, antes de las tablas de detalle.
         section = re.search(rf'Set Plays {re.escape(team_section_title)}(.*?)Total Throw Ins', text, re.DOTALL)
         if not section:
             return None
-        m = re.search(r'(\d+)\s*\n?\s*Total Corners', section.group(1))
+        m = re.search(rf'(\d+)\s*\n?\s*{re.escape(label)}', section.group(1))
         return int(m.group(1)) if m else None
 
     result = {
@@ -184,8 +196,22 @@ def _extract_stats(text: str) -> Optional[dict]:
         "tiros_arco_local": int(shots.group(2)) if shots else None,
         "tiros_visitante": int(shots.group(3)) if shots else None,
         "tiros_arco_visitante": int(shots.group(4)) if shots else None,
-        "corners_local": _corners_for_team(home_team),
-        "corners_visitante": _corners_for_team(away_team),
+        "corners_local": _set_play_stat_for_team(home_team, "Total Corners"),
+        "corners_visitante": _set_play_stat_for_team(away_team, "Total Corners"),
+        "tiros_libres_local": _set_play_stat_for_team(home_team, "Total Free Kicks"),
+        "tiros_libres_visitante": _set_play_stat_for_team(away_team, "Total Free Kicks"),
+        "penales_local": _set_play_stat_for_team(home_team, "Total Penalties"),
+        "penales_visitante": _set_play_stat_for_team(away_team, "Total Penalties"),
+        "posesion_local": float(possession.group(1)) if possession else None,
+        "posesion_visitante": float(possession.group(2)) if possession else None,
+        "xg_local": float(xg.group(1)) if xg else None,
+        "xg_visitante": float(xg.group(2)) if xg else None,
+        "pases_local": int(passes.group(1)) if passes else None,
+        "pases_completos_local": int(passes.group(2)) if passes else None,
+        "pases_visitante": int(passes.group(3)) if passes else None,
+        "pases_completos_visitante": int(passes.group(4)) if passes else None,
+        "precision_pase_local": int(pass_pct.group(1)) if pass_pct else None,
+        "precision_pase_visitante": int(pass_pct.group(2)) if pass_pct else None,
     }
     return result
 
@@ -266,3 +292,42 @@ def get_match_stats_for_team(team_name: str) -> list:
         if stats:
             matches.append(stats)
     return matches
+
+
+# Campos "propios" de cada equipo (no del rival) que sí tiene sentido
+# promediar como contexto informativo. Deliberadamente separado de
+# enrich_with_fifa_reports: xG/posesión/pases no alimentan ningún modelo
+# (a diferencia de córners/tiros al arco, que sí forman parte del cálculo
+# de simulation.py) — mostrarlos mezclados con "datos que sí calculan
+# probabilidades" sería confuso. Este resumen es puramente para que el
+# usuario tenga más contexto oficial en pantalla.
+_OWN_FIELD_SUFFIXES = ["xg", "posesion", "pases", "precision_pase", "tiros_libres", "penales", "corners", "tiros_arco"]
+
+
+def get_team_summary_stats(team_name: str) -> Optional[dict]:
+    """
+    Promedios oficiales de FIFA para un equipo a lo largo de sus partidos
+    ya jugados en el torneo (xG, posesión, pases, precisión de pase,
+    córners, tiros libres, penales). None si no hay reportes disponibles
+    para ese equipo — nunca inventa un promedio con muestra vacía.
+    """
+    try:
+        reports = get_match_stats_for_team(team_name)
+    except Exception:
+        return None
+    if not reports:
+        return None
+
+    def _own_value(report: dict, suffix: str):
+        # Un reporte guarda el dato en la columna "_local" o "_visitante"
+        # según si el equipo jugó de local o visitante ESE partido — hay
+        # que mirar cuál de las dos columnas corresponde a `team_name`.
+        if report["equipo_local"] == team_name:
+            return report.get(f"{suffix}_local")
+        return report.get(f"{suffix}_visitante")
+
+    averages = {"partidos_con_dato": len(reports)}
+    for suffix in _OWN_FIELD_SUFFIXES:
+        values = [v for r in reports if (v := _own_value(r, suffix)) is not None]
+        averages[suffix] = round(sum(values) / len(values), 1) if values else None
+    return averages

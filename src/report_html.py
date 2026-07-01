@@ -123,6 +123,42 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
             rows = '<p class="muted">Ninguno por encima del umbral configurado.</p>'
         value_bets_card = f'<div class="card"><h2>Value bets</h2>{rows}</div>'
 
+    fifa_context = report.get("fifa_context")
+    fifa_context_card = ""
+    if fifa_context and (fifa_context.get("local") or fifa_context.get("visitante")):
+        def _row(label, unit, key):
+            l = fifa_context.get("local") or {}
+            v = fifa_context.get("visitante") or {}
+            lv, vv = l.get(key), v.get(key)
+            if lv is None and vv is None:
+                return ""
+            lv_str = f"{lv}{unit}" if lv is not None else "—"
+            vv_str = f"{vv}{unit}" if vv is not None else "—"
+            return f"<tr><td>{html.escape(label)}</td><td>{lv_str}</td><td>{vv_str}</td></tr>"
+
+        rows = "".join([
+            _row("xG (goles esperados reales)", "", "xg"),
+            _row("Posesión", "%", "posesion"),
+            _row("Precisión de pase", "%", "precision_pase"),
+            _row("Córners", "", "corners"),
+            _row("Tiros libres", "", "tiros_libres"),
+            _row("Penales", "", "penales"),
+        ])
+        n_local = (fifa_context.get("local") or {}).get("partidos_con_dato", 0)
+        n_away = (fifa_context.get("visitante") or {}).get("partidos_con_dato", 0)
+        fifa_context_card = f"""
+    <div class="card">
+      <h2>Datos oficiales FIFA (promedio del torneo)</h2>
+      <p class="muted">Extraído de los reportes oficiales de partido de la FIFA
+      ({n_local} partido(s) de {html.escape(home)}, {n_away} de {html.escape(away)}).
+      Es contexto informativo real — no se usa para calcular ninguna probabilidad
+      de las de arriba, a diferencia de córners/tiros al arco que sí alimentan el modelo.</p>
+      <table>
+        <thead><tr><th>Estadística</th><th>{html.escape(home)}</th><th>{html.escape(away)}</th></tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </div>"""
+
     if report.get("corners"):
         corners_section = (
             _stat_card("Córners", report["corners"]["local"], report["corners"]["visitante"], report["corners"]["total"])
@@ -225,6 +261,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
   </div>
 
   {_over_under_card("Over/Under goles", report["over_under_goles"], "goles")}
+  {fifa_context_card}
   {corners_section}
   {shots_section}
   {cards_section}
