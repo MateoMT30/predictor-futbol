@@ -1,0 +1,23 @@
+{
+  "1x2": {
+    "local": 2.10,
+    "empate": 3.30,
+    "visitante": 3.40
+  },
+  "ambos_anotan": {
+    "si": 1.85,
+    "no": 1.95
+  },
+  "over_under_goles": {
+    "2.5": {
+      "over": 1.90,
+      "under": 1.90
+    }
+  },
+  "over_under_corners": {
+    "9.5": {
+      "over": 1.95,
+      "under": 1.85
+    }
+  }
+}

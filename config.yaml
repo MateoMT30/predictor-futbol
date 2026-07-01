@@ -1,0 +1,47 @@
+# =============================================================================
+# config.yaml — Todos los parámetros del sistema en un solo lugar.
+#
+# Nada de lo que aparece aquí debería estar "quemado" (hardcoded) dentro del
+# código fuente. Si vas a experimentar con el modelo (por ejemplo, para ver
+# si un half-life de recencia distinto mejora la calibración), este es el
+# único archivo que necesitas tocar.
+# =============================================================================
+
+simulation:
+  n_iterations: 15000          # iteraciones de Montecarlo por partido (>=10,000 recomendado)
+  random_seed: 42               # semilla fija -> resultados reproducibles entre corridas
+
+ratings:
+  elo_k_factor: 20               # sensibilidad del ajuste Elo tras cada partido
+  elo_initial: 1500               # rating inicial para un equipo sin historial
+  home_advantage_elo: 60          # puntos Elo extra otorgados al local antes de calcular la expectativa
+  goal_diff_multiplier: true      # si True, pondera el ajuste Elo por diferencia de goles (blowouts pesan más)
+
+recency:
+  half_life_days: 180              # a los N días, el peso de un partido cae a la mitad
+  min_weight: 0.05                 # piso de peso para partidos muy viejos (nunca llegan a 0)
+
+opponent_strength:
+  enabled: true
+  strength_weight: 0.5             # cuánto se ajustan promedios crudos por la fuerza relativa del rival (0=no ajusta, 1=ajuste completo)
+
+goals_model:
+  dixon_coles_xi: 0.0018           # parámetro de decaimiento temporal (mismo espíritu que half_life, pero propio del ajuste MLE)
+  max_goals: 10                    # tope de goles considerado en la matriz de probabilidad conjunta
+  low_score_correction: true       # aplica la corrección de Dixon-Coles para marcadores 0-0, 1-0, 0-1, 1-1
+
+markets:
+  over_under_lines:
+    goals: [1.5, 2.5, 3.5]
+    corners: [8.5, 9.5, 10.5]
+    shots_on_target: [7.5, 8.5, 9.5]
+    cards: [3.5, 4.5]
+  handicap_lines: [-1, -0.5, 0, 0.5, 1]
+
+value_bets:
+  min_edge: 0.03                  # diferencia mínima (prob. modelo - prob. implícita) para marcar "value bet"
+  remove_overround: true          # si True, normaliza las cuotas para quitar el margen de la casa antes de comparar
+
+paths:
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
