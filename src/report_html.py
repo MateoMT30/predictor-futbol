@@ -230,6 +230,14 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     <h2>Ambos anotan</h2>
     {_bar("Sí", btts["si"], "#22c55e")}
     {_bar("No", btts["no"], "#ef4444")}
+  </div>
+
+  <div class="card">
+    <h2>Goles esperados</h2>
+    <p class="muted">Es un promedio estadístico (a veces llamado "xG"), no una predicción de
+    marcador exacto — nadie anota fracciones de gol. "2.31" significa: si este partido se
+    jugara muchas veces en las mismas condiciones, este equipo anotaría en promedio 2.31 goles
+    por partido. Es el número que alimenta el resto de mercados de goles (1X2, over/under, etc.).</p>
     <div class="goals-summary">
       <div>Local<span>{ge['local']:.2f}</span></div>
       <div>Visitante<span>{ge['visitante']:.2f}</span></div>
