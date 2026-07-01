@@ -126,7 +126,13 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
    stream decodificado supere `_MAX_PAGE_CONTENT_BYTES` (800 KB) antes de
    `extract_text` — el texto de estadísticas vive en páginas de tablas,
    livianas; (b) descarga en streaming con corte si el PDF supera
-   `_MAX_PDF_BYTES` (15 MB).
+   `_MAX_PDF_BYTES` (15 MB). **Segunda iteración**: el primer filtro medía
+   solo el content stream propio de la página y NO alcanzó — los gráficos
+   pesados viven en **Form XObjects** que la página solo referencia, y
+   `extract_text` recurre dentro de ellos y los tokeniza (ahí explotaba).
+   `_page_is_light` ahora suma también el tamaño de los Form XObjects
+   referenciados en `/Resources /XObject` y descarta la página si el total
+   supera el umbral.
 
 ## Decisiones de producto (por qué se ve como se ve)
 

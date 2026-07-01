@@ -97,18 +97,46 @@ _MAX_PAGE_CONTENT_BYTES = 800 * 1024       # saltar páginas de gráficos pesado
 
 
 def _page_is_light(page) -> bool:
-    """True si el content stream (decodificado) de la página es pequeño.
-    Solo esas páginas (tablas de estadísticas) se pasan a extract_text;
-    las páginas de gráficos vectoriales se saltan para no reventar la RAM.
-    Ante cualquier duda al medir el tamaño, se considera pesada (se salta),
-    porque el costo de un falso negativo (perder una tabla) es mucho menor
-    que un OOM que tumba el worker."""
+    """True si el "peso" total de la página es pequeño. Solo esas páginas
+    (tablas de estadísticas) se pasan a extract_text; las de gráficos
+    vectoriales se saltan para no reventar la RAM.
+
+    El peso NO es solo el content stream propio de la página: los gráficos
+    pesados de estos reportes (heatmaps, mapas de pases) viven en **Form
+    XObjects** que la página solo referencia, y extract_text recurre dentro
+    de ellos y los tokeniza — ahí es donde explotaba la memoria aunque el
+    stream propio de la página fuera chico. Por eso se suma también el
+    tamaño de los Form XObjects referenciados.
+
+    Ante cualquier duda al medir, se considera pesada (se salta): el costo
+    de un falso negativo (perder una tabla) es mucho menor que un OOM que
+    tumba el worker."""
     try:
+        total = 0
         contents = page.get_contents()
-        if contents is None:
-            return True
-        data = contents.get_data()
-        return len(data) <= _MAX_PAGE_CONTENT_BYTES
+        if contents is not None:
+            total += len(contents.get_data())
+
+        resources = page.get("/Resources")
+        if resources is not None:
+            xobjects = resources.get_object().get("/XObject")
+            if xobjects is not None:
+                for name in xobjects.get_object():
+                    try:
+                        xobj = xobjects[name].get_object()
+                        # Solo los Form XObjects tienen content stream que
+                        # extract_text tokeniza; las imágenes rasterizadas
+                        # (/Image) no las recorre, así que no cuentan.
+                        if xobj.get("/Subtype") == "/Form":
+                            total += len(xobj.get_data())
+                    except Exception:
+                        # No se pudo medir un XObject -> asumir que es el
+                        # pesado y descartar la página entera.
+                        return False
+                    if total > _MAX_PAGE_CONTENT_BYTES:
+                        return False
+
+        return total <= _MAX_PAGE_CONTENT_BYTES
     except Exception:
         return False
 
