@@ -73,7 +73,10 @@ def test_partidos_with_mocked_connector(monkeypatch):
         client = app.test_client()
         res = client.get("/partidos?competition=PL")
     assert res.status_code == 200
-    assert b"Team A vs Team B" in res.data
+    assert b"Team A" in res.data
+    assert b"Team B" in res.data
+    assert "(local)".encode() in res.data
+    assert "(visitante)".encode() in res.data
 
 
 def test_predecir_without_api_key_returns_500():

@@ -17,8 +17,10 @@ teléfono.
 """
 
 import html
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+
+from .i18n import to_colombia_time
 
 
 def _pct(x: float) -> str:
@@ -67,14 +69,23 @@ def _no_data_card(title: str) -> str:
     </div>"""
 
 
-def _over_under_card(title: str, lines: dict) -> str:
+def _over_under_card(title: str, lines: dict, metric_label: str) -> str:
+    """
+    metric_label: nombre en español de lo que se está contando (ej.
+    "goles", "córners"), usado en la explicación de qué significa cada
+    línea — este mercado es el que más confunde a alguien que no viene
+    del mundo de las apuestas.
+    """
     rows = "".join(
-        f"<tr><td>Línea {line}</td><td>{_pct(probs['over'])}</td><td>{_pct(probs['under'])}</td></tr>"
+        f"<tr><td>{line}</td><td>{_pct(probs['over'])}</td><td>{_pct(probs['under'])}</td></tr>"
         for line, probs in lines.items()
     )
     return f"""
     <div class="card">
       <h2>{html.escape(title)}</h2>
+      <p class="muted">"Over X" = probabilidad de que el total de {html.escape(metric_label)}
+      del partido termine por ENCIMA de X. "Under X" = por DEBAJO de X. Ej.: si la línea es 2.5,
+      "Over 2.5" significa 3 {html.escape(metric_label)} o más.</p>
       <table>
         <thead><tr><th>Línea</th><th>Over</th><th>Under</th></tr></thead>
         <tbody>{rows}</tbody>
@@ -114,7 +125,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     if report.get("corners"):
         corners_section = (
             _stat_card("Córners", report["corners"]["local"], report["corners"]["visitante"], report["corners"]["total"])
-            + _over_under_card("Over/Under córners", report["over_under_corners"])
+            + _over_under_card("Over/Under córners", report["over_under_corners"], "córners")
         )
     else:
         corners_section = _no_data_card("Córners")
@@ -122,7 +133,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     if report.get("tiros_al_arco"):
         shots_section = (
             _stat_card("Tiros al arco", report["tiros_al_arco"]["local"], report["tiros_al_arco"]["visitante"], report["tiros_al_arco"]["total"])
-            + _over_under_card("Over/Under tiros al arco", report["over_under_tiros"])
+            + _over_under_card("Over/Under tiros al arco", report["over_under_tiros"], "tiros al arco")
         )
     else:
         shots_section = _no_data_card("Tiros al arco")
@@ -130,7 +141,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     if report.get("tarjetas"):
         cards_section = (
             _stat_card("Tarjetas amarillas", report["tarjetas"]["amarillas_local"], report["tarjetas"]["amarillas_visitante"], report["tarjetas"]["amarillas_total"])
-            + _over_under_card("Over/Under tarjetas amarillas", report["over_under_tarjetas"])
+            + _over_under_card("Over/Under tarjetas amarillas", report["over_under_tarjetas"], "tarjetas amarillas")
             + f"""
     <div class="card">
       <h2>Tarjetas rojas (media esperada)</h2>
@@ -143,7 +154,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     else:
         cards_section = _no_data_card("Tarjetas")
 
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = to_colombia_time(datetime.now(timezone.utc)).strftime("%Y-%m-%d %I:%M %p") + " (hora Colombia)"
 
     ajuste = report.get("ajuste_manual_aplicado", {"local": 0.0, "visitante": 0.0})
     ajuste_banner = ""
@@ -210,9 +221,9 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
   {ajuste_banner}
   <div class="card">
     <h2>1X2</h2>
-    {_bar("Local", x1x2["local"], "#3b82f6")}
+    {_bar(f"Local ({html.escape(home)})", x1x2["local"], "#3b82f6")}
     {_bar("Empate", x1x2["empate"], "#94a3b8")}
-    {_bar("Visitante", x1x2["visitante"], "#ef4444")}
+    {_bar(f"Visitante ({html.escape(away)})", x1x2["visitante"], "#ef4444")}
   </div>
 
   <div class="card">
@@ -226,7 +237,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     </div>
   </div>
 
-  {_over_under_card("Over/Under goles", report["over_under_goles"])}
+  {_over_under_card("Over/Under goles", report["over_under_goles"], "goles")}
   {corners_section}
   {shots_section}
   {cards_section}

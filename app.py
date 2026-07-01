@@ -58,6 +58,7 @@ from src.models.tarjetas import CardsModel, CardsModelConfig
 from src.simulation import MatchSimulator, SimulationConfig
 from src.report_html import render_html_report
 from src.main import load_config, build_report
+from src.i18n import team_name_es, to_colombia_time
 
 app = Flask(__name__)
 
@@ -83,6 +84,7 @@ BASE_STYLE = """
   a.match-row:hover { border-color: var(--accent); }
   .match-date { color: var(--muted); font-size: 0.8rem; }
   .match-teams { font-weight: 700; margin-top: 2px; }
+  .muted { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
   details summary { color: var(--accent); cursor: pointer; font-size: 0.85rem; margin-top: 12px; }
 </style>
 """
@@ -137,7 +139,7 @@ MATCHES_TEMPLATE = BASE_STYLE + """
   {% for m in matches %}
   <a class="match-row" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
     <div class="match-date">{{ m.fecha_str }}</div>
-    <div class="match-teams">{{ m.equipo_local }} vs {{ m.equipo_visitante }}</div>
+    <div class="match-teams">{{ m.equipo_local_es }} <span class="muted">(local)</span> vs {{ m.equipo_visitante_es }} <span class="muted">(visitante)</span></div>
   </a>
   {% endfor %}
 {% elif not error %}
@@ -181,11 +183,17 @@ def partidos():
             matches=[], error=f"No se pudo consultar football-data.org: {e}",
         )
 
+    # Los nombres se traducen solo para mostrar; el valor que va en el link
+    # (equipo_local/equipo_visitante) se deja en el idioma original de la
+    # API, porque es el identificador que usa el modelo para cruzar contra
+    # el histórico — traducirlo ahí rompería la búsqueda.
     matches = [
         {
             "equipo_local": row.equipo_local,
             "equipo_visitante": row.equipo_visitante,
-            "fecha_str": row.fecha_hora.strftime("%a %d %b, %H:%M UTC"),
+            "equipo_local_es": team_name_es(row.equipo_local),
+            "equipo_visitante_es": team_name_es(row.equipo_visitante),
+            "fecha_str": to_colombia_time(row.fecha_hora).strftime("%a %d %b, %I:%M %p") + " (hora Colombia)",
         }
         for row in upcoming.itertuples()
     ]
@@ -238,6 +246,11 @@ def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adju
         home_adjustment=home_adjustment, away_adjustment=away_adjustment,
         matches_df=matches_df,
     )
+    # Traducción solo de presentación: local/visitante ya se usaron para
+    # todo el cálculo (Elo, Dixon-Coles, simulación) con el nombre
+    # original — acá se reemplaza únicamente lo que se va a mostrar.
+    report["partido"]["local"] = team_name_es(local)
+    report["partido"]["visitante"] = team_name_es(visitante)
     return render_html_report(report, value_bets=None)
 
 
