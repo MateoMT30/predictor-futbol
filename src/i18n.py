@@ -67,3 +67,28 @@ def to_colombia_time(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo("UTC"))
     return dt.astimezone(COLOMBIA_TZ)
+
+
+DIAS_SEMANA_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def day_label_es(dt: datetime, reference: datetime = None) -> str:
+    """
+    Etiqueta de día relativo al estilo de apps deportivas (365Scores,
+    SofaScore): "Hoy", "Mañana", "Ayer", o el nombre del día si está más
+    lejos. `dt` y `reference` deben estar ya en la misma zona horaria
+    (normalmente Colombia, vía to_colombia_time) — comparar fechas en UTC
+    directamente daría el día equivocado para partidos de noche.
+    """
+    if reference is None:
+        reference = to_colombia_time(datetime.now(ZoneInfo("UTC")))
+    delta_days = (dt.date() - reference.date()).days
+    if delta_days == 0:
+        return "Hoy"
+    if delta_days == 1:
+        return "Mañana"
+    if delta_days == -1:
+        return "Ayer"
+    dia_semana = DIAS_SEMANA_ES[dt.weekday()]
+    return f"{dia_semana} {dt.day} {MESES_ES[dt.month - 1]}"

@@ -59,7 +59,7 @@ from src.models.tarjetas import CardsModel, CardsModelConfig
 from src.simulation import MatchSimulator, SimulationConfig
 from src.report_html import render_html_report
 from src.main import load_config, build_report
-from src.i18n import team_name_es, to_colombia_time
+from src.i18n import team_name_es, to_colombia_time, day_label_es
 from src.web_style import wrap_page
 
 app = Flask(__name__)
@@ -113,18 +113,24 @@ MATCHES_BODY = """
 <h1>Próximos partidos</h1>
 <div class="subtitle">{{ competition_name }} — toca un partido para ver el pronóstico.</div>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
-{% if matches %}
-  {% for m in matches %}
-  <a class="match-row" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
-    <div class="match-crests">
-      {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
-      {% if m.escudo_visitante %}<img class="crest" loading="lazy" src="{{ m.escudo_visitante }}" onerror="this.style.visibility='hidden'">{% endif %}
+{% if grouped_matches %}
+  {% for grupo in grouped_matches %}
+  <div class="day-header">{{ grupo.dia }}</div>
+  {% for m in grupo.partidos %}
+  <a class="match-row-v2" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
+    <div class="mr-teams">
+      <div class="mr-team">
+        {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
+        <span>{{ m.equipo_local_es }}</span>
+      </div>
+      <div class="mr-team">
+        {% if m.escudo_visitante %}<img class="crest" loading="lazy" src="{{ m.escudo_visitante }}" onerror="this.style.visibility='hidden'">{% endif %}
+        <span>{{ m.equipo_visitante_es }}</span>
+      </div>
     </div>
-    <div>
-      <div class="match-date">{{ m.fecha_str }}</div>
-      <div class="match-teams">{{ m.equipo_local_es }} <span class="muted">(local)</span> vs {{ m.equipo_visitante_es }} <span class="muted">(visitante)</span></div>
-    </div>
+    <div class="mr-time">{{ m.hora_str }}</div>
   </a>
+  {% endfor %}
   {% endfor %}
 {% elif not error %}
   <p class="subtitle">No hay partidos programados próximamente para esta competición.</p>
@@ -220,7 +226,7 @@ def partidos():
     if not connector:
         body = render_template_string(
             MATCHES_BODY, competition=competition, competition_name=competition_name,
-            matches=[], standings=None, scorers=None, error="Falta configurar FOOTBALL_DATA_API_KEY en el servidor.",
+            grouped_matches=[], standings=None, scorers=None, error="Falta configurar FOOTBALL_DATA_API_KEY en el servidor.",
         )
         return wrap_page(competition_name, body)
     try:
@@ -228,7 +234,7 @@ def partidos():
     except Exception as e:
         body = render_template_string(
             MATCHES_BODY, competition=competition, competition_name=competition_name,
-            matches=[], standings=None, scorers=None, error=f"No se pudo consultar football-data.org: {e}",
+            grouped_matches=[], standings=None, scorers=None, error=f"No se pudo consultar football-data.org: {e}",
         )
         return wrap_page(competition_name, body)
 
@@ -244,10 +250,22 @@ def partidos():
             "equipo_visitante_es": team_name_es(row.equipo_visitante),
             "escudo_local": _clean_nan(getattr(row, "escudo_local", None)),
             "escudo_visitante": _clean_nan(getattr(row, "escudo_visitante", None)),
-            "fecha_str": to_colombia_time(row.fecha_hora).strftime("%a %d %b, %I:%M %p") + " (hora Colombia)",
+            "hora_str": to_colombia_time(row.fecha_hora).strftime("%I:%M %p"),
+            "dia": day_label_es(to_colombia_time(row.fecha_hora)),
         }
         for row in upcoming.itertuples()
     ]
+
+    # Agrupación por día (estilo apps deportivas: "Hoy", "Mañana", etc.),
+    # preservando el orden cronológico de "upcoming" — como ya viene
+    # ordenado ascendente, agrupar consecutivamente basta, no hace falta
+    # reordenar ni usar un dict global que podría mezclar el orden.
+    grouped_matches = []
+    for m in matches:
+        if grouped_matches and grouped_matches[-1]["dia"] == m["dia"]:
+            grouped_matches[-1]["partidos"].append(m)
+        else:
+            grouped_matches.append({"dia": m["dia"], "partidos": [m]})
 
     # Tabla de posiciones y goleadores: puramente informativos (ver
     # discusión en el README sobre por qué no se usan para calcular
@@ -278,7 +296,7 @@ def partidos():
 
     body = render_template_string(
         MATCHES_BODY, competition=competition, competition_name=competition_name,
-        matches=matches, standings=standings, scorers=scorers, error=None,
+        grouped_matches=grouped_matches, standings=standings, scorers=scorers, error=None,
     )
     return wrap_page(competition_name, body)
 

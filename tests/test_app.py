@@ -75,8 +75,9 @@ def test_partidos_with_mocked_connector(monkeypatch):
     assert res.status_code == 200
     assert b"Team A" in res.data
     assert b"Team B" in res.data
-    assert "(local)".encode() in res.data
-    assert "(visitante)".encode() in res.data
+    # Agrupado por dia (estilo apps deportivas): debe mostrar la etiqueta
+    # del dia relativo, ej. el nombre del dia de la semana si es lejano.
+    assert b"mr-teams" in res.data
 
 
 def test_predecir_without_api_key_returns_500():

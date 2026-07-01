@@ -90,6 +90,28 @@ MODERN_CSS = """
   .crest-lg { width: 40px; height: 40px; object-fit: contain; }
   .match-crests { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .muted { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+
+  /* Lista de partidos estilo apps deportivas (agrupada por día) */
+  .day-header {
+    display: flex; align-items: center; gap: 10px; margin: 22px 0 10px;
+    color: var(--muted); font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .day-header:first-of-type { margin-top: 4px; }
+  .day-header::before, .day-header::after { content: ""; flex: 1; height: 1px; background: var(--card-border); }
+  .match-row-v2 {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    text-decoration: none; color: var(--text); background: var(--card); border: 1px solid var(--card-border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: 14px; padding: 12px 14px; margin-bottom: 8px;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .match-row-v2:hover { border-color: var(--accent); transform: translateY(-2px); background: rgba(99,102,241,0.08); }
+  .match-row-v2:active { transform: translateY(0) scale(0.99); }
+  .mr-teams { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; }
+  .mr-team { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 500; }
+  .mr-team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mr-time { font-size: 0.82rem; color: var(--accent2); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
   details summary {
     color: var(--accent2); cursor: pointer; font-size: 0.88rem; margin-top: 14px;
     font-weight: 600; list-style: none; display: flex; align-items: center; gap: 6px;
