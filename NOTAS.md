@@ -64,7 +64,7 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
 |---|---|---|
 | Resultados, próximos partidos, 1X2, goles | **football-data.org** (API gratis, `FOOTBALL_DATA_API_KEY`) | ✅ Funcionando |
 | Tabla de posiciones, goleadores | football-data.org | ✅ Funcionando (solo informativo) |
-| Córners, tiros, tiros al arco, xG, posesión, pases, tiros libres, penales | **Reportes oficiales PDF de FIFA** (`src/connectors/fifa_reports_connector.py`) | ✅ Funcionando, solo para Mundial (`competition == "WC"`) |
+| Córners, tiros, tiros al arco, xG, posesión, pases, tiros libres, penales | **Reportes oficiales PDF de FIFA** (`src/connectors/fifa_reports_connector.py`) | ✅ Funcionando vía **cache JSON precomputado** (ver abajo), solo Mundial (`WC`) |
 | Tarjetas amarillas/rojas | Ninguna fuente gratuita encontrada | ❌ Sin resolver — solo vía CSV manual |
 | Cuotas de casas de apuestas | Ninguna API gratis las da | ❌ Descartado — función sigue en el CLI (`--cuotas`) pero no en la web |
 
@@ -93,10 +93,24 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
   de equipo** (fuentes distintas pueden deletrear un país distinto, ej.
   "South Korea" vs "Korea Republic" — la fecha es un cruce confiable
   porque un equipo no juega dos partidos oficiales el mismo día).
-- Todo cacheado en memoria (índice de links 1h, PDFs parseados
-  indefinidamente — un reporte de un partido ya jugado no cambia).
 - Nunca lanza excepción hacia arriba: si algo falla, el pipeline sigue
   con los datos que ya tenía.
+
+**IMPORTANTE — cache JSON precomputado (así funciona en producción):**
+Parsear un PDF cuesta ~8-15s; hacerlo dentro de un request en Render free
+daba timeouts y OOM (ver bug #7). Por eso el parseo NO ocurre en la web:
+- Los datos se precomputan offline con `scripts/refresh_fifa_cache.py`, que
+  descarga y parsea TODOS los reportes y los guarda en `data/fifa_cache.json`
+  (se sube al repo con git; NO está en .gitignore).
+- En producción el conector solo LEE ese JSON (`_load_disk_cache`), instantáneo.
+  Por defecto `_LIVE_PARSE=False`: nunca descarga/parsea un PDF en la web. El
+  script de refresco activa `FIFA_LIVE_PARSE=1` para sí parsear.
+- **Para actualizar tras una jornada nueva**: correr `python
+  scripts/refresh_fifa_cache.py` en cualquier PC con el repo, luego
+  `git add data/fifa_cache.json && git commit && git push`. Render se
+  actualiza solo. Como un reporte de partido ya jugado no cambia, solo hay
+  que re-correrlo cuando se juegan partidos nuevos.
+- El índice de links sigue cacheado en memoria 1h.
 
 ## Bugs reales encontrados y corregidos (contexto útil si algo se ve raro)
 
@@ -176,6 +190,18 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
    `--timeout 90` del Procfile nunca se aplicó. HAY QUE poner en el dashboard
    de Render (Settings > Start Command):
    `gunicorn app:app --worker-class gthread --workers 1 --threads 4 --timeout 90`
+   **Sexta iteración (la que lo resolvió de verdad)**: se comprobó que el
+   parseo SÍ funciona (extrae córners/tiros/xG bien), pero ~8-15s por PDF es
+   demasiado para el free tier. Solución definitiva: **cache JSON offline**
+   (`data/fifa_cache.json` + `scripts/refresh_fifa_cache.py`); la web ya no
+   parsea PDFs, solo lee el JSON. Ver sección "cache JSON precomputado".
+8. **Partidos que ya empezaron desaparecían de la lista.** `fetch_upcoming`
+   pedía `status=SCHEDULED`; cuando un partido arranca, football-data.org lo
+   pasa a `IN_PLAY`/`PAUSED` y se caía de la lista. Fix
+   (`football_data_connector.py`): pedir por rango de fechas (`dateFrom`=hoy,
+   `dateTo`=hoy+`dias`) y descartar solo los estados terminados (FINISHED,
+   AWARDED, CANCELLED, POSTPONED, SUSPENDED), así los de hoy siguen visibles
+   aunque estén en juego.
 
 ## Decisiones de producto (por qué se ve como se ve)
 

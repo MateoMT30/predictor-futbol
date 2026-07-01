@@ -42,10 +42,13 @@ suficientes" en el reporte cuando no hay fuente).
 """
 
 import contextvars
+import json
 import multiprocessing
+import os
 import re
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -86,6 +89,53 @@ FIFA_CODES = {
 
 _link_cache: dict = {}  # {"links": (timestamp, [urls])}
 _pdf_cache: dict = {}   # {url: parsed_stats_dict}
+
+# --- Cache en disco (JSON) ---------------------------------------------------
+# Parsear los PDFs de FIFA cuesta ~8-15s cada uno y es demasiado lento/pesado
+# para hacerlo DENTRO de un request en Render free (se veían timeouts y OOM).
+# Solución: precomputar todos los reportes offline con
+# `scripts/refresh_fifa_cache.py` y guardarlos en este JSON, que se sube al
+# repo. En producción la web solo LEE el JSON (instantáneo); no parsea PDFs.
+# Como un reporte de un partido ya jugado no cambia, basta re-correr el script
+# cuando se jueguen partidos nuevos.
+_CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "fifa_cache.json"
+
+# Por defecto NO se parsean PDFs en vivo (solo se lee el JSON). El script de
+# refresco pone FIFA_LIVE_PARSE=1 para sí bajar y parsear los PDFs y
+# regenerar el cache. Así la web nunca se arriesga a un timeout/OOM.
+_LIVE_PARSE = os.environ.get("FIFA_LIVE_PARSE") == "1"
+
+_disk_cache_loaded = False
+
+
+def _load_disk_cache() -> None:
+    """Carga el JSON precomputado en `_pdf_cache` (una sola vez). Si el
+    archivo no existe o está corrupto, se sigue sin cache — el pipeline nunca
+    falla por esto."""
+    global _disk_cache_loaded
+    if _disk_cache_loaded:
+        return
+    _disk_cache_loaded = True
+    try:
+        with open(_CACHE_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            for url, stats in data.items():
+                _pdf_cache.setdefault(url, stats)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
+def save_disk_cache() -> int:
+    """Vuelca `_pdf_cache` al JSON en disco. La usa el script de refresco.
+    Devuelve cuántas entradas con datos (no None) quedaron guardadas."""
+    _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    serializable = {url: stats for url, stats in _pdf_cache.items()}
+    with open(_CACHE_PATH, "w", encoding="utf-8") as fh:
+        json.dump(serializable, fh, ensure_ascii=False, indent=2, sort_keys=True)
+    return sum(1 for v in serializable.values() if v)
 
 # Límites de memoria — Render free tiene solo 512 MB y numpy/pandas ya
 # cargados ocupan una parte. Parsear los PMSR de FIFA con pypdf puede
@@ -196,9 +246,16 @@ def _links_for_code(code: str, links: list) -> list:
 
 
 def _parse_pdf(url: str) -> Optional[dict]:
+    _load_disk_cache()
     if url in _pdf_cache:
         return _pdf_cache[url]
     if PdfReader is None:
+        return None
+    # En producción (web) no se parsea en vivo: solo se sirve lo que quedó
+    # precomputado en el JSON. Parsear un PDF acá costaría ~10s y arriesga el
+    # timeout/OOM que tanto costó eliminar. Solo el script de refresco
+    # (FIFA_LIVE_PARSE=1) llega a descargar y parsear.
+    if not _LIVE_PARSE:
         return None
 
     try:
@@ -413,8 +470,33 @@ def get_match_stats_for_team(team_name: str) -> list:
             parsed_count += 1
         stats = _parse_pdf(url)
         if stats:
-            matches.append(stats)
+            # Copia (no se muta el dict cacheado, que puede reutilizarse para
+            # el rival) con la marca de si ESTE equipo jugó de local en ese
+            # partido — se deduce del orden del nombre de archivo (HOME-V-AWAY,
+            # ver _own_is_local), no de comparar nombres, porque el reporte de
+            # FIFA puede escribir el país distinto que football-data.
+            matches.append({**stats, "_own_is_local": _own_is_local(url, code)})
     return matches
+
+
+def _own_is_local(url: str, code: str) -> Optional[bool]:
+    """Deduce si el equipo con este código FIFA jugó de local en el partido,
+    a partir del nombre del archivo del reporte, que lista los códigos en
+    orden LOCAL-V-VISITANTE (ej. 'PMSR-M04-USA-V-PAR' -> USA local;
+    'PMSR-M59-TUR-v-USA' -> USA visitante). None si no se puede determinar."""
+    name = url.rsplit("/", 1)[-1]
+    parts = re.split(r'[\s\-][Vv][\s\-]', name, maxsplit=1)
+    if len(parts) != 2:
+        return None
+    left, right = parts[0].upper(), parts[1].upper()
+    code_u = code.upper()
+    left_has = re.search(rf'(^|[\s\-]){re.escape(code_u)}([\s\-]|$)', left) is not None
+    right_has = re.search(rf'(^|[\s\-]){re.escape(code_u)}([\s\-]|\.)', right) is not None
+    if left_has and not right_has:
+        return True
+    if right_has and not left_has:
+        return False
+    return None
 
 
 # Campos "propios" de cada equipo (no del rival) que sí tiene sentido
@@ -443,11 +525,17 @@ def get_team_summary_stats(team_name: str) -> Optional[dict]:
 
     def _own_value(report: dict, suffix: str):
         # Un reporte guarda el dato en la columna "_local" o "_visitante"
-        # según si el equipo jugó de local o visitante ESE partido — hay
-        # que mirar cuál de las dos columnas corresponde a `team_name`.
-        if report["equipo_local"] == team_name:
-            return report.get(f"{suffix}_local")
-        return report.get(f"{suffix}_visitante")
+        # según si el equipo jugó de local o visitante ESE partido. Se usa la
+        # marca `_own_is_local` (deducida del nombre de archivo en
+        # get_match_stats_for_team) porque comparar nombres no sirve: el
+        # reporte de FIFA puede escribir el país distinto que football-data
+        # (ej. "USA" vs "United States"). Fallback a comparar nombres si la
+        # marca no se pudo determinar.
+        own_local = report.get("_own_is_local")
+        if own_local is None:
+            own_local = report.get("equipo_local") == team_name
+        suffix_side = "local" if own_local else "visitante"
+        return report.get(f"{suffix}_{suffix_side}")
 
     averages = {"partidos_con_dato": len(reports)}
     for suffix in _OWN_FIELD_SUFFIXES:

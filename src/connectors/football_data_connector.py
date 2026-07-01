@@ -144,10 +144,24 @@ class FootballDataConnector(DataSourceConnector):
         if not liga:
             raise ValueError("FootballDataConnector requiere el código de competición (ej. 'PL', 'WC').")
 
+        # No se filtra por `status=SCHEDULED`: cuando un partido arranca, la
+        # API lo pasa a IN_PLAY/PAUSED y dejaría de aparecer en la lista (los
+        # que "acaban de empezar" desaparecían). En su lugar se pide por rango
+        # de fechas (desde hoy) y se descartan solo los estados ya terminados,
+        # así los partidos de hoy siguen visibles aunque estén en juego.
+        _ESTADOS_TERMINADOS = {"FINISHED", "AWARDED", "CANCELLED", "POSTPONED", "SUSPENDED"}
+
         def fetch():
-            data = self._get(f"/competitions/{liga}/matches", {"status": "SCHEDULED"})
+            hoy = datetime.now(timezone.utc).date()
+            params = {
+                "dateFrom": hoy.isoformat(),
+                "dateTo": (hoy + timedelta(days=dias)).isoformat(),
+            }
+            data = self._get(f"/competitions/{liga}/matches", params)
             rows = []
             for m in data.get("matches", [])[: 50]:  # tope defensivo, no por cuota sino por tamaño de respuesta
+                if m.get("status") in _ESTADOS_TERMINADOS:
+                    continue
                 rows.append({
                     "fecha_hora": pd.to_datetime(m["utcDate"]),
                     "liga": data.get("competition", {}).get("name", liga),
@@ -159,6 +173,11 @@ class FootballDataConnector(DataSourceConnector):
                     "escudo_local": m["homeTeam"].get("crest"),
                     "escudo_visitante": m["awayTeam"].get("crest"),
                 })
+            if not rows:
+                return pd.DataFrame(
+                    columns=["fecha_hora", "liga", "equipo_local", "equipo_visitante",
+                             "escudo_local", "escudo_visitante"]
+                )
             return pd.DataFrame(rows).sort_values("fecha_hora").reset_index(drop=True)
 
         cache_key = f"upcoming:{liga}"
