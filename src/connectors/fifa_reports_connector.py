@@ -84,6 +84,34 @@ FIFA_CODES = {
 _link_cache: dict = {}  # {"links": (timestamp, [urls])}
 _pdf_cache: dict = {}   # {url: parsed_stats_dict}
 
+# Límites de memoria — Render free tiene solo 512 MB y numpy/pandas ya
+# cargados ocupan una parte. Los PMSR de FIFA traen páginas con gráficos
+# vectoriales pesados (mapas de pases, heatmaps): sus content streams son
+# enormes y, al tokenizarlos, pypdf explota la memoria 10-100x (se vio un
+# SIGKILL/OOM real que mata al worker entero — y como OOM no lanza excepción
+# Python, el try/except de _parse_pdf NO lo atrapa; hay que evitarlo ANTES).
+# El texto que sí necesitamos (Key Statistics / Set Plays) vive en páginas
+# de tablas, que son livianas; las páginas de gráficos se saltan por tamaño.
+_MAX_PDF_BYTES = 15 * 1024 * 1024          # no descargar PDFs gigantes
+_MAX_PAGE_CONTENT_BYTES = 800 * 1024       # saltar páginas de gráficos pesados
+
+
+def _page_is_light(page) -> bool:
+    """True si el content stream (decodificado) de la página es pequeño.
+    Solo esas páginas (tablas de estadísticas) se pasan a extract_text;
+    las páginas de gráficos vectoriales se saltan para no reventar la RAM.
+    Ante cualquier duda al medir el tamaño, se considera pesada (se salta),
+    porque el costo de un falso negativo (perder una tabla) es mucho menor
+    que un OOM que tumba el worker."""
+    try:
+        contents = page.get_contents()
+        if contents is None:
+            return True
+        data = contents.get_data()
+        return len(data) <= _MAX_PAGE_CONTENT_BYTES
+    except Exception:
+        return False
+
 
 def _fetch_report_links() -> list:
     now = time.time()
@@ -113,10 +141,29 @@ def _parse_pdf(url: str) -> Optional[dict]:
         return None
 
     try:
-        response = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        response = requests.get(
+            url, timeout=30, headers={"User-Agent": "Mozilla/5.0"}, stream=True
+        )
         response.raise_for_status()
-        reader = PdfReader(io.BytesIO(response.content))
-        full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        # Cortar la descarga si el PDF excede el límite: evita traer a RAM un
+        # archivo enorme antes siquiera de parsearlo.
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            total += len(chunk)
+            if total > _MAX_PDF_BYTES:
+                _pdf_cache[url] = None
+                return None
+            chunks.append(chunk)
+        content = b"".join(chunks)
+        reader = PdfReader(io.BytesIO(content))
+        # Solo se extrae texto de páginas livianas (tablas). Las páginas de
+        # gráficos vectoriales se saltan ANTES de tokenizarlas, que es lo que
+        # causaba el OOM/SIGKILL. Igual devuelven texto suficiente porque las
+        # estadísticas viven en las páginas de tablas.
+        full_text = "\n".join(
+            page.extract_text() or "" for page in reader.pages if _page_is_light(page)
+        )
     except Exception:
         _pdf_cache[url] = None
         return None

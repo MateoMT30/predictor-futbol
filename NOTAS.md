@@ -117,6 +117,16 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
    el navegador → normalizado a `None` con `_clean_nan()`.
 6. **`Under` redundante** en tablas de over/under (si sabes "Over", "Under"
    es la resta) → simplificado a una sola columna.
+7. **OOM/SIGKILL parseando PDFs de FIFA** (`_parse_content_stream` de pypdf
+   en el traceback). Los PMSR tienen páginas con gráficos vectoriales
+   pesados (mapas de pases, heatmaps); al tokenizar sus content streams
+   pypdf explota la RAM y mata al worker. Clave: OOM **no lanza excepción**,
+   así que el `try/except` de `_parse_pdf` NO lo atrapaba. Fix
+   (`fifa_reports_connector.py`): (a) se salta cada página cuyo content
+   stream decodificado supere `_MAX_PAGE_CONTENT_BYTES` (800 KB) antes de
+   `extract_text` — el texto de estadísticas vive en páginas de tablas,
+   livianas; (b) descarga en streaming con corte si el PDF supera
+   `_MAX_PDF_BYTES` (15 MB).
 
 ## Decisiones de producto (por qué se ve como se ve)
 
