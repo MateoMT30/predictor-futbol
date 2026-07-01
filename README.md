@@ -167,7 +167,11 @@ en la misma red WiFi, usa `http://TU_IP_LOCAL:5000` (revisa tu IP con
 3. Render detecta el [`Procfile`](Procfile) automáticamente
    (`web: gunicorn app:app`) — no hace falta configurar comando de arranque.
    En "Build command" pon `pip install -r requirements.txt`.
-4. En **Environment**, agrega `FOOTBALL_DATA_API_KEY` con tu key.
+4. En **Environment**, agrega `FOOTBALL_DATA_API_KEY` con tu key. También se
+   recomienda agregar `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1` y
+   `MKL_NUM_THREADS=1` (ver la nota de memoria más abajo) — `app.py` ya los
+   fija por código, pero declararlos también en Render es una segunda capa
+   de seguridad por si algún día cambia el punto de entrada del proceso.
 5. Plan **Free**, y "Create Web Service".
 6. Cuando termine el deploy, te da una URL tipo `predictor-futbol.onrender.com`.
    Ábrela desde el celular, agrégala a la pantalla de inicio, y listo.
@@ -177,11 +181,25 @@ minutos sin uso. La primera petición después de eso tarda 30-50 segundos en
 responder mientras despierta; las siguientes son normales. Para uso personal
 esto no suele ser un problema.
 
+**Sobre memoria (512 MB en el plan free) y numpy/scipy:** en contenedores
+compartidos, OpenBLAS (la librería de álgebra lineal que usan numpy/scipy)
+suele detectar el número de núcleos del servidor físico completo, no la
+fracción real asignada al contenedor, e intenta lanzar un hilo de cálculo
+por núcleo detectado — cada uno reservando su propia memoria. Esto puede
+disparar el consumo de RAM muy por encima de lo necesario y provocar que
+Render mate el proceso (`Worker was sent SIGKILL! Perhaps out of memory?`),
+algo que efectivamente ocurrió probando con una competición de muchos
+equipos (el Mundial ampliado a 48 selecciones). `app.py` fija
+`OMP_NUM_THREADS=1` y variables equivalentes al inicio para evitarlo. Si
+aun así ves ese error con una competición muy grande, considera acotar más
+el histórico (`--datos`/parámetro de fecha) o subir de plan.
+
 **Limitación de la fuente de datos gratuita:** football-data.org entrega
 resultados y goles, pero no córners/tiros/tarjetas. En el flujo automático
-(vía API), esos mercados aparecerán con media 0 y rango vacío porque no hay
-datos — es una limitación de la fuente gratuita, no un bug. Para tenerlos,
-usa el modo avanzado con un CSV propio que sí incluya esas columnas.
+(vía API), esos mercados se muestran con un aviso explícito de "sin datos
+suficientes" en vez de inventar un cero — es una limitación de la fuente
+gratuita, no un bug. Para tenerlos, usa el modo avanzado con un CSV propio
+que sí incluya esas columnas.
 
 ## Cómo cargar tus propios datos
 

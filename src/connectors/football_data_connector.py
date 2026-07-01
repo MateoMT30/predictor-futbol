@@ -30,6 +30,7 @@ el costo de una llamada real, y las siguientes vuelven a estar cubiertas.
 
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -93,6 +94,18 @@ class FootballDataConnector(DataSourceConnector):
     ) -> pd.DataFrame:
         if not liga:
             raise ValueError("FootballDataConnector requiere el código de competición en 'liga' (ej. 'PL', 'WC').")
+
+        # Red de seguridad: si nadie especifica un rango, se limita a los
+        # últimos 365 días por defecto (nunca "todo el historial"). Sin este
+        # límite, una competición con muchos años acumulados (ej. el
+        # Mundial, con clasificatorias de décadas) mete cientos de equipos
+        # distintos en el ajuste de Dixon-Coles, disparando el número de
+        # parámetros a optimizar y agotando la memoria en hosting gratuito
+        # (esto causó un OOM real en producción con el plan free de Render).
+        if not desde and not hasta:
+            now = datetime.now(timezone.utc)
+            hasta = now.strftime("%Y-%m-%d")
+            desde = (now - timedelta(days=365)).strftime("%Y-%m-%d")
 
         def fetch():
             params = {"status": "FINISHED"}

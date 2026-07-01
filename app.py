@@ -25,6 +25,24 @@ mismo comportamiento que main.py, sin depender de la API.
 """
 
 import os
+
+# IMPORTANTE: esto debe ejecutarse ANTES de importar numpy/scipy/pandas
+# (más abajo, vía src/*). En hosting con recursos limitados y compartidos
+# (ej. el plan gratuito de Render: 512 MB RAM / 0.1 CPU), las librerías de
+# álgebra lineal que usa numpy/scipy (OpenBLAS) suelen detectar el número
+# de núcleos del servidor físico completo, no la fracción real asignada al
+# contenedor, e intentan lanzar un hilo de cálculo por núcleo detectado.
+# Cada hilo reserva su propia memoria de trabajo, lo que puede disparar el
+# consumo de RAM muy por encima de lo que el proceso necesitaría en
+# realidad — esto causó un "Worker was sent SIGKILL! Perhaps out of
+# memory?" real en producción. Forzar un solo hilo por librería resuelve
+# ese problema clásico de numpy/scipy en contenedores compartidos.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, render_template_string, request, redirect, url_for
@@ -233,10 +251,21 @@ def predecir():
     if not connector:
         return "Falta configurar FOOTBALL_DATA_API_KEY en el servidor.", 500
 
+    # 365 días de historial recientes bastan para que Dixon-Coles y Elo
+    # tengan suficiente muestra sin traer la competición completa. Esto no
+    # es solo una optimización de velocidad: sin este límite, una
+    # competición con muchos años de historial (ej. "WC" trae Mundiales y
+    # clasificatorias de decenas de años) mete cientos de equipos distintos
+    # en el ajuste de Dixon-Coles, disparando el número de parámetros a
+    # optimizar y agotando la memoria del plan gratuito de Render (512 MB) —
+    # esto causó un "Worker was sent SIGKILL! Perhaps out of memory?" real
+    # en producción antes de este fix.
+    hoy = datetime.now(timezone.utc)
+    desde = (hoy - timedelta(days=365)).strftime("%Y-%m-%d")
+    hasta = hoy.strftime("%Y-%m-%d")
+
     try:
-        # 365 días de historial recientes bastan para que Dixon-Coles y Elo
-        # tengan suficiente muestra sin traer la competición completa.
-        matches_df, cleaning_report = load_from_connector(connector, liga=competition, desde=None, hasta=None)
+        matches_df, cleaning_report = load_from_connector(connector, liga=competition, desde=desde, hasta=hasta)
     except Exception as e:
         return f"Error consultando el histórico: {e}", 502
 
