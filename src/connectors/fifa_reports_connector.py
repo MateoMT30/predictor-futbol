@@ -96,7 +96,9 @@ _pdf_cache: dict = {}   # {url: parsed_stats_dict}
 # aislado con tope de memoria** (ver `_pdf_extract_worker.py`): si revienta,
 # muere solo el subproceso y este worker web sobrevive.
 _MAX_PDF_BYTES = 15 * 1024 * 1024          # no descargar PDFs gigantes
-_PDF_PARSE_TIMEOUT = 25                     # segundos antes de matar el subproceso
+_PDF_PARSE_TIMEOUT = 10                     # segundos máx. de parseo por PDF
+_TEAM_TIME_BUDGET = 18                      # presupuesto total de PDFs por equipo (s)
+_MAX_PDFS_PER_TEAM = 4                      # tope de PDFs a parsear por equipo
 
 # Se usa 'fork' (Linux/Render): NO re-importa el __main__ del padre (a
 # diferencia de 'spawn', que bajo gunicorn re-ejecutaría el arranque), y es
@@ -135,10 +137,13 @@ def _extract_pdf_text_isolated(content: bytes) -> Optional[str]:
         result = None
     finally:
         parent_conn.close()
-        proc.join(1)
+        # SIGKILL (kill), no SIGTERM: un hijo atascado dentro de código C de
+        # pypdf (allocando) puede ignorar SIGTERM y dejar al padre colgado en
+        # join() hasta que gunicorn mate al worker por timeout. kill() lo
+        # remata sin margen.
         if proc.is_alive():
-            proc.terminate()
-            proc.join()
+            proc.kill()
+        proc.join()
 
     if not isinstance(result, str):
         return None
@@ -174,7 +179,7 @@ def _parse_pdf(url: str) -> Optional[dict]:
 
     try:
         response = requests.get(
-            url, timeout=30, headers={"User-Agent": "Mozilla/5.0"}, stream=True
+            url, timeout=15, headers={"User-Agent": "Mozilla/5.0"}, stream=True
         )
         response.raise_for_status()
         # Cortar la descarga si el PDF excede el límite: evita traer a RAM un
@@ -364,8 +369,21 @@ def get_match_stats_for_team(team_name: str) -> list:
     except Exception:
         return []
 
+    # Presupuesto de tiempo y de cantidad: en Render free (1 worker, timeout
+    # de gunicorn) no se puede pasar minutos parseando PDFs dentro de un
+    # request. Se parsean como mucho _MAX_PDFS_PER_TEAM y solo mientras quede
+    # presupuesto; los que ya estén en caché no cuentan contra el reloj (son
+    # instantáneos). Es best-effort: si no alcanza el tiempo, se devuelve lo
+    # que se haya podido, consistente con "nunca inventar, mostrar lo que hay".
+    deadline = time.monotonic() + _TEAM_TIME_BUDGET
     matches = []
+    parsed_count = 0
     for url in _links_for_code(code, links):
+        cached = url in _pdf_cache
+        if not cached:
+            if parsed_count >= _MAX_PDFS_PER_TEAM or time.monotonic() >= deadline:
+                break
+            parsed_count += 1
         stats = _parse_pdf(url)
         if stats:
             matches.append(stats)

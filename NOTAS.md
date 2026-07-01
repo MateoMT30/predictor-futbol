@@ -147,6 +147,23 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
    Windows (dev, sin `fork` y con RAM de sobra) se parsea inline. Los
    filtros de páginas pesadas (XObjects) y de tamaño de descarga se
    mantienen como primera línea de defensa dentro del subproceso.
+   **Cuarta iteración (tiempo, no memoria)**: tras aislar la memoria, el
+   worker seguía muriendo, pero el traceback reveló otra causa —
+   `gunicorn/workers/base.py::handle_abort` = **timeout de gunicorn**, no
+   OOM (¡el mensaje "Perhaps out of memory?" de gunicorn es genérico para
+   cualquier muerte inesperada del worker y despista!). El padre se quedaba
+   bloqueado en `proc.join()` esperando al subproceso, y con varios PDFs por
+   partido el tiempo total pasaba los 30s de timeout. Fixes: (a) matar al
+   hijo con `proc.kill()` (SIGKILL), no `terminate()` (un hijo atascado en C
+   de pypdf ignora SIGTERM); (b) presupuesto por equipo `_TEAM_TIME_BUDGET`
+   (18s) + tope `_MAX_PDFS_PER_TEAM` (4) + timeout por PDF `_PDF_PARSE_TIMEOUT`
+   (10s) — los PDFs ya cacheados no cuentan contra el reloj; (c) Procfile con
+   `gunicorn --worker-class gthread --workers 1 --threads 4 --timeout 90`
+   (hilos para que un request lento no bloquee a los demás, y margen sobre
+   el presupuesto de parseo). Nota para el futuro: si el free tier sigue
+   ajustado, la solución "ideal" es sacar el parseo de PDFs del request y
+   precomputar las stats a un JSON cacheado en disco (offline/cron), pero eso
+   agrega fricción de refresco de datos durante el Mundial.
 
 ## Decisiones de producto (por qué se ve como se ve)
 
