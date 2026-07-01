@@ -164,6 +164,18 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
    ajustado, la solución "ideal" es sacar el parseo de PDFs del request y
    precomputar las stats a un JSON cacheado en disco (offline/cron), pero eso
    agrega fricción de refresco de datos durante el Mundial.
+   **Quinta iteración**: seguía muriendo por timeout de gunicorn. Dos causas:
+   (a) el presupuesto era POR EQUIPO (18s) y hay 2 equipos por request →
+   ~36s > 30s. Fix: presupuesto TOTAL por request `_REQUEST_TIME_BUDGET`
+   (15s), compartido vía `contextvars.ContextVar` (thread-safe, necesario
+   porque gthread atiende varios requests en hilos paralelos y una global
+   normal se pisaría). Se arranca con `start_request_budget()` en app.py
+   alrededor del bloque WC y se limpia en `finally`. (b) **Render ignora el
+   Procfile si hay un "Start Command" configurado en el dashboard del
+   servicio** — casi seguro `gunicorn app:app` sin flags, por eso el
+   `--timeout 90` del Procfile nunca se aplicó. HAY QUE poner en el dashboard
+   de Render (Settings > Start Command):
+   `gunicorn app:app --worker-class gthread --workers 1 --threads 4 --timeout 90`
 
 ## Decisiones de producto (por qué se ve como se ve)
 

@@ -50,7 +50,12 @@ from flask import Flask, render_template_string, request, redirect, url_for
 
 from src.connectors.csv_connector import CSVConnector
 from src.connectors.football_data_connector import FootballDataConnector, COMPETITIONS
-from src.connectors.fifa_reports_connector import enrich_with_fifa_reports, get_team_summary_stats
+from src.connectors.fifa_reports_connector import (
+    clear_request_budget,
+    enrich_with_fifa_reports,
+    get_team_summary_stats,
+    start_request_budget,
+)
 from src.data_loader import load_from_connector
 from src.ratings import EloRatingSystem, RatingsConfig
 from src.models.goles import DixonColesModel, GoalsModelConfig
@@ -409,19 +414,26 @@ def predecir():
     # si la fuente falla, matches_df simplemente se queda como estaba.
     fifa_context = None
     if competition == "WC":
+        # Presupuesto TOTAL de parseo de PDFs para todo este request (cubre el
+        # enrich y los summaries de ambos equipos), para no pasarse del timeout
+        # de gunicorn. Best-effort: lo que no alcance a parsearse se omite.
+        start_request_budget()
         try:
-            matches_df = enrich_with_fifa_reports(matches_df, {local, visitante})
-        except Exception:
-            pass
-        try:
-            fifa_context = {
-                "local": get_team_summary_stats(local),
-                "visitante": get_team_summary_stats(visitante),
-            }
-            if not fifa_context["local"] and not fifa_context["visitante"]:
+            try:
+                matches_df = enrich_with_fifa_reports(matches_df, {local, visitante})
+            except Exception:
+                pass
+            try:
+                fifa_context = {
+                    "local": get_team_summary_stats(local),
+                    "visitante": get_team_summary_stats(visitante),
+                }
+                if not fifa_context["local"] and not fifa_context["visitante"]:
+                    fifa_context = None
+            except Exception:
                 fifa_context = None
-        except Exception:
-            fifa_context = None
+        finally:
+            clear_request_budget()
 
     return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context)
 

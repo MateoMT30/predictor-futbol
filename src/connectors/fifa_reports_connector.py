@@ -41,6 +41,7 @@ suficientes" en el reporte cuando no hay fuente).
    (un reporte de un partido ya jugado no cambia).
 """
 
+import contextvars
 import multiprocessing
 import re
 import time
@@ -96,9 +97,32 @@ _pdf_cache: dict = {}   # {url: parsed_stats_dict}
 # aislado con tope de memoria** (ver `_pdf_extract_worker.py`): si revienta,
 # muere solo el subproceso y este worker web sobrevive.
 _MAX_PDF_BYTES = 15 * 1024 * 1024          # no descargar PDFs gigantes
-_PDF_PARSE_TIMEOUT = 10                     # segundos máx. de parseo por PDF
-_TEAM_TIME_BUDGET = 18                      # presupuesto total de PDFs por equipo (s)
+_PDF_PARSE_TIMEOUT = 8                      # segundos máx. de parseo por PDF
+_TEAM_TIME_BUDGET = 18                      # presupuesto de PDFs por equipo (s)
 _MAX_PDFS_PER_TEAM = 4                      # tope de PDFs a parsear por equipo
+_REQUEST_TIME_BUDGET = 15                   # presupuesto TOTAL de parseo por request (s)
+
+# Presupuesto global por request, compartido entre las varias llamadas a
+# get_match_stats_for_team que hace un mismo request (enrich + summaries de
+# los 2 equipos). Sin esto, cada equipo tenía su propio presupuesto y el
+# total (2 equipos) se pasaba del timeout de gunicorn. Es un ContextVar (no
+# una global normal) porque con el worker gthread hay varios hilos atendiendo
+# requests en paralelo, y cada hilo tiene su propio contexto: así el deadline
+# de un request no pisa el de otro.
+_request_deadline: "contextvars.ContextVar[Optional[float]]" = contextvars.ContextVar(
+    "_fifa_request_deadline", default=None
+)
+
+
+def start_request_budget(seconds: float = _REQUEST_TIME_BUDGET) -> None:
+    """Arranca (para el hilo/request actual) el presupuesto total de tiempo
+    de parseo de PDFs de FIFA. Se llama una vez al inicio del bloque de
+    enriquecimiento en app.py."""
+    _request_deadline.set(time.monotonic() + seconds)
+
+
+def clear_request_budget() -> None:
+    _request_deadline.set(None)
 
 # Se usa 'fork' (Linux/Render): NO re-importa el __main__ del padre (a
 # diferencia de 'spawn', que bajo gunicorn re-ejecutaría el arranque), y es
@@ -376,6 +400,9 @@ def get_match_stats_for_team(team_name: str) -> list:
     # instantáneos). Es best-effort: si no alcanza el tiempo, se devuelve lo
     # que se haya podido, consistente con "nunca inventar, mostrar lo que hay".
     deadline = time.monotonic() + _TEAM_TIME_BUDGET
+    request_deadline = _request_deadline.get()
+    if request_deadline is not None:
+        deadline = min(deadline, request_deadline)
     matches = []
     parsed_count = 0
     for url in _links_for_code(code, links):
