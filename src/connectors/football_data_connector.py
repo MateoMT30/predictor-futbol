@@ -124,6 +124,8 @@ class FootballDataConnector(DataSourceConnector):
                     "liga": data.get("competition", {}).get("name", liga),
                     "equipo_local": m["homeTeam"]["name"],
                     "equipo_visitante": m["awayTeam"]["name"],
+                    "escudo_local": m["homeTeam"].get("crest"),
+                    "escudo_visitante": m["awayTeam"].get("crest"),
                     "goles_local": score["home"],
                     "goles_visitante": score["away"],
                     # El plan gratuito no incluye córners/tiros/tarjetas — se
@@ -151,8 +153,56 @@ class FootballDataConnector(DataSourceConnector):
                     "liga": data.get("competition", {}).get("name", liga),
                     "equipo_local": m["homeTeam"]["name"],
                     "equipo_visitante": m["awayTeam"]["name"],
+                    # Escudos: la API los da gratis y mejoran mucho la
+                    # lectura visual de la lista de partidos — puede venir
+                    # null para selecciones/equipos sin escudo cargado.
+                    "escudo_local": m["homeTeam"].get("crest"),
+                    "escudo_visitante": m["awayTeam"].get("crest"),
                 })
             return pd.DataFrame(rows).sort_values("fecha_hora").reset_index(drop=True)
 
         cache_key = f"upcoming:{liga}"
+        return _get_cached_or_fetch(cache_key, self.cache_ttl_seconds, fetch)
+
+    def fetch_standings(self, liga: str) -> list:
+        """
+        Tabla de posiciones. Para competiciones de grupos (ej. Mundial) la
+        API devuelve varias tablas (una por grupo); para ligas normales,
+        una sola con type="TOTAL". Se devuelve la lista tal cual la entrega
+        la API (cada elemento: {group, table: [...]}) — se deja la
+        interpretación de "cuántas tablas mostrar" a quien la use, en vez
+        de asumir aquí un formato que no aplica a todas las competiciones.
+
+        Uso: información de contexto para el usuario (posición, puntos,
+        forma), NO se usa en ningún cálculo del modelo estadístico.
+        """
+        def fetch():
+            data = self._get(f"/competitions/{liga}/standings", {})
+            standings = data.get("standings", [])
+            # Solo interesa la tabla acumulada total, no las variantes
+            # HOME/AWAY que también entrega la API para algunas ligas.
+            return [s for s in standings if s.get("type") == "TOTAL"]
+
+        cache_key = f"standings:{liga}"
+        return _get_cached_or_fetch(cache_key, self.cache_ttl_seconds, fetch)
+
+    def fetch_scorers(self, liga: str, limit: int = 10) -> list:
+        """
+        Goleadores del torneo. Información de contexto para el usuario —
+        no se usa en el cálculo del modelo (ver discusión en README sobre
+        por qué no se infieren tiros al arco a partir de goles anotados).
+        """
+        def fetch():
+            data = self._get(f"/competitions/{liga}/scorers", {"limit": limit})
+            return [
+                {
+                    "jugador": s["player"]["name"],
+                    "equipo": s["team"]["name"],
+                    "goles": s["goals"],
+                    "asistencias": s.get("assists"),
+                }
+                for s in data.get("scorers", [])
+            ]
+
+        cache_key = f"scorers:{liga}:{limit}"
         return _get_cached_or_fetch(cache_key, self.cache_ttl_seconds, fetch)

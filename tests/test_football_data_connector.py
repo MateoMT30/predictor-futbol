@@ -86,3 +86,30 @@ def test_fetch_matches_requires_liga():
     connector = FootballDataConnector(api_key="fake-key")
     with pytest.raises(ValueError):
         connector.fetch_matches(liga=None)
+
+
+def test_fetch_standings_keeps_only_total_type():
+    connector = FootballDataConnector(api_key="fake-key")
+    payload = {
+        "standings": [
+            {"stage": "ALL", "type": "TOTAL", "group": "Group A", "table": [{"position": 1}]},
+            {"stage": "ALL", "type": "HOME", "group": "Group A", "table": [{"position": 1}]},
+        ]
+    }
+    with patch("requests.get", return_value=_mock_response(payload)):
+        standings = connector.fetch_standings("PL")
+    assert len(standings) == 1
+    assert standings[0]["type"] == "TOTAL"
+
+
+def test_fetch_scorers_normalizes_fields():
+    connector = FootballDataConnector(api_key="fake-key")
+    payload = {
+        "scorers": [
+            {"player": {"name": "Kylian Mbappé"}, "team": {"name": "France"}, "goals": 6, "assists": 2},
+        ]
+    }
+    with patch("requests.get", return_value=_mock_response(payload)):
+        scorers = connector.fetch_scorers("WC")
+    assert scorers[0]["jugador"] == "Kylian Mbappé"
+    assert scorers[0]["goles"] == 6

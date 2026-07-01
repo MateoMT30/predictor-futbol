@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from .i18n import to_colombia_time
+from .web_style import wrap_page
 
 
 def _pct(x: float) -> str:
@@ -167,61 +168,28 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
       el modelo haya inferido de los resultados históricos.</p>
     </div>"""
 
-    html_doc = f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pronóstico: {html.escape(home)} vs {html.escape(away)}</title>
-<style>
-  :root {{
-    --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
-    --accent: #3b82f6; --green: #22c55e; --amber: #f59e0b;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0; padding: 16px; background: var(--bg); color: var(--text);
-    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
-    max-width: 720px; margin-inline: auto;
-  }}
-  h1 {{ font-size: 1.4rem; margin: 8px 0 4px; }}
-  .subtitle {{ color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }}
-  .card {{
-    background: var(--card); border-radius: 12px; padding: 16px;
-    margin-bottom: 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  }}
-  .card h2 {{ font-size: 1rem; margin: 0 0 12px; color: var(--accent); }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; }}
-  th, td {{ text-align: left; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); }}
-  th {{ color: var(--muted); font-weight: 500; }}
-  .total-row {{ font-weight: 700; }}
-  .bar-row {{ margin-bottom: 12px; }}
-  .bar-label {{ display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 4px; }}
-  .bar-value {{ font-weight: 700; }}
-  .bar-track {{ background: rgba(255,255,255,0.08); border-radius: 6px; height: 10px; overflow: hidden; }}
-  .bar-fill {{ height: 100%; border-radius: 6px; }}
-  .value-bet {{
-    background: rgba(34,197,94,0.12); border-left: 4px solid var(--green);
-    border-radius: 6px; padding: 10px 12px; margin-bottom: 10px;
-  }}
-  .vb-market {{ font-weight: 700; margin-bottom: 2px; }}
-  .vb-detail {{ font-size: 0.85rem; color: var(--muted); }}
-  .muted {{ color: var(--muted); font-size: 0.9rem; }}
-  .disclaimer {{
-    font-size: 0.78rem; color: var(--muted); border-top: 1px solid rgba(255,255,255,0.1);
-    margin-top: 24px; padding-top: 12px; line-height: 1.4;
-  }}
-  .goals-summary {{ display: flex; justify-content: space-around; text-align: center; margin-top: 8px; }}
-  .goals-summary div span {{ display: block; font-size: 1.3rem; font-weight: 700; color: var(--accent); }}
-</style>
-</head>
-<body>
+    def _crest_img(url):
+        if not url:
+            return ""
+        return f'<img class="crest-lg" loading="lazy" src="{html.escape(url)}" onerror="this.style.visibility=\'hidden\'">'
+
+    crest_home = report.get("escudo_local")
+    crest_away = report.get("escudo_visitante")
+    crests_html = ""
+    if crest_home or crest_away:
+        crests_html = f"""<div class="match-crests" style="margin-bottom:8px;">
+      {_crest_img(crest_home)}
+      {_crest_img(crest_away)}
+    </div>"""
+
+    body = f"""
+  {crests_html}
   <h1>{html.escape(home)} vs {html.escape(away)}</h1>
   <div class="subtitle">Generado el {generated_at} · predictor-futbol</div>
   {ajuste_banner}
   <div class="card">
     <h2>1X2</h2>
-    {_bar(f"Local ({html.escape(home)})", x1x2["local"], "#3b82f6")}
+    {_bar(f"Local ({html.escape(home)})", x1x2["local"], "#6366f1")}
     {_bar("Empate", x1x2["empate"], "#94a3b8")}
     {_bar(f"Visitante ({html.escape(away)})", x1x2["visitante"], "#ef4444")}
   </div>
@@ -257,6 +225,5 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     No garantiza resultados. Las apuestas deportivas implican riesgo real de
     pérdida de dinero. Ver README.md para las limitaciones completas del modelo.
   </div>
-</body>
-</html>"""
-    return html_doc
+"""
+    return wrap_page(f"Pronóstico: {home} vs {away}", body)

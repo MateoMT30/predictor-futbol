@@ -45,6 +45,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd
 from flask import Flask, render_template_string, request, redirect, url_for
 
 from src.connectors.csv_connector import CSVConnector
@@ -59,37 +60,14 @@ from src.simulation import MatchSimulator, SimulationConfig
 from src.report_html import render_html_report
 from src.main import load_config, build_report
 from src.i18n import team_name_es, to_colombia_time
+from src.web_style import wrap_page
 
 app = Flask(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_DATA_PATH = PROJECT_ROOT / "examples" / "historico_ejemplo.csv"
 
-BASE_STYLE = """
-<style>
-  :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; }
-  * { box-sizing: border-box; }
-  body { margin:0; padding:16px; background:var(--bg); color:var(--text);
-    font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width:720px; margin-inline:auto; }
-  h1 { font-size: 1.3rem; }
-  .subtitle { color: var(--muted); font-size: 0.8rem; margin-bottom: 16px; }
-  .card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-  label { display:block; font-size:0.85rem; color:var(--muted); margin:10px 0 4px; }
-  input, select, button { width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15);
-    background:#0f172a; color:var(--text); font-size:1rem; }
-  button { background: var(--accent); border:none; font-weight:700; cursor:pointer; margin-top:16px; padding:12px; }
-  .error { background: rgba(239,68,68,0.15); color:#fca5a5; padding:10px; border-radius:8px; margin-bottom:12px; }
-  a.match-row { display:block; text-decoration:none; color:var(--text); background:#0f172a;
-    border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px; margin-bottom:8px; }
-  a.match-row:hover { border-color: var(--accent); }
-  .match-date { color: var(--muted); font-size: 0.8rem; }
-  .match-teams { font-weight: 700; margin-top: 2px; }
-  .muted { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
-  details summary { color: var(--accent); cursor: pointer; font-size: 0.85rem; margin-top: 12px; }
-</style>
-"""
-
-INDEX_TEMPLATE = BASE_STYLE + """
+INDEX_BODY = """
 <h1>⚽ Predictor Fútbol</h1>
 <div class="subtitle">Elige una competición para ver los próximos partidos.</div>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
@@ -101,7 +79,7 @@ INDEX_TEMPLATE = BASE_STYLE + """
       <option value="{{ code }}">{{ name }}</option>
       {% endfor %}
     </select>
-    <button type="submit">Ver próximos partidos</button>
+    <button type="submit">Ver próximos partidos →</button>
   </form>
 </div>
 <details>
@@ -125,28 +103,95 @@ INDEX_TEMPLATE = BASE_STYLE + """
     </form>
   </div>
 </details>
-<div class="subtitle" style="margin-top:20px;">
-  Disclaimer: modelo probabilístico basado en datos históricos. No garantiza
+<div class="disclaimer">
+  <b>Disclaimer:</b> modelo probabilístico basado en datos históricos. No garantiza
   resultados. Las apuestas deportivas implican riesgo real de pérdida de dinero.
 </div>
 """
 
-MATCHES_TEMPLATE = BASE_STYLE + """
+MATCHES_BODY = """
 <h1>Próximos partidos</h1>
 <div class="subtitle">{{ competition_name }} — toca un partido para ver el pronóstico.</div>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 {% if matches %}
   {% for m in matches %}
   <a class="match-row" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
-    <div class="match-date">{{ m.fecha_str }}</div>
-    <div class="match-teams">{{ m.equipo_local_es }} <span class="muted">(local)</span> vs {{ m.equipo_visitante_es }} <span class="muted">(visitante)</span></div>
+    <div class="match-crests">
+      {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
+      {% if m.escudo_visitante %}<img class="crest" loading="lazy" src="{{ m.escudo_visitante }}" onerror="this.style.visibility='hidden'">{% endif %}
+    </div>
+    <div>
+      <div class="match-date">{{ m.fecha_str }}</div>
+      <div class="match-teams">{{ m.equipo_local_es }} <span class="muted">(local)</span> vs {{ m.equipo_visitante_es }} <span class="muted">(visitante)</span></div>
+    </div>
   </a>
   {% endfor %}
 {% elif not error %}
   <p class="subtitle">No hay partidos programados próximamente para esta competición.</p>
 {% endif %}
-<a class="match-row" href="/" style="text-align:center;color:var(--muted);">← Elegir otra competición</a>
+
+{% if standings %}
+<details>
+  <summary>Tabla de posiciones</summary>
+  {% for grupo in standings %}
+  <div class="card">
+    <h2>{{ grupo.group or "Tabla general" }}</h2>
+    <table>
+      <thead><tr><th>#</th><th>Equipo</th><th>PJ</th><th>DG</th><th>Pts</th></tr></thead>
+      <tbody>
+        {% for row in grupo.table %}
+        <tr>
+          <td><span class="pos-badge">{{ row.position }}</span></td>
+          <td style="display:flex;align-items:center;gap:8px;">
+            {% if row.team.crest %}<img class="crest" loading="lazy" src="{{ row.team.crest }}" onerror="this.style.visibility='hidden'">{% endif %}
+            {{ row.team_es }}
+          </td>
+          <td>{{ row.playedGames }}</td>
+          <td>{{ row.goalDifference }}</td>
+          <td><b>{{ row.points }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</details>
+{% endif %}
+
+{% if scorers %}
+<details>
+  <summary>Goleadores del torneo</summary>
+  <div class="card">
+    <table>
+      <thead><tr><th>#</th><th>Jugador</th><th>Equipo</th><th>Goles</th></tr></thead>
+      <tbody>
+        {% for s in scorers %}
+        <tr><td>{{ loop.index }}</td><td>{{ s.jugador }}</td><td>{{ s.equipo_es }}</td><td><b>{{ s.goles }}</b></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+<a class="match-row" href="/" style="justify-content:center;color:var(--muted);">← Elegir otra competición</a>
 """
+
+
+def _clean_nan(value):
+    """
+    pandas convierte None a NaN (float) en columnas de tipo objeto cuando
+    TODAS las filas de esa columna están vacías (ej. ningún partido trae
+    escudo). Un NaN es "truthy" en Python (bool(float('nan')) == True), así
+    que un {% if %} de Jinja no lo filtra y termina renderizando
+    src="nan" — el navegador intenta cargar la URL literal "/nan". Esta
+    función normaliza cualquier NaN a None antes de que llegue a la plantilla.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    return value
 
 
 def _get_api_connector():
@@ -163,25 +208,29 @@ def index():
         error = ("No hay FOOTBALL_DATA_API_KEY configurada — la lista de próximos partidos "
                  "no va a funcionar hasta que la configures (ver README > Desplegar en Render). "
                  "Mientras tanto puedes usar el modo avanzado de abajo.")
-    return render_template_string(INDEX_TEMPLATE, competitions=COMPETITIONS, error=error)
+    body = render_template_string(INDEX_BODY, competitions=COMPETITIONS, error=error)
+    return wrap_page("Predictor Fútbol", body)
 
 
 @app.route("/partidos", methods=["GET"])
 def partidos():
     competition = request.args.get("competition", "")
+    competition_name = COMPETITIONS.get(competition, competition)
     connector = _get_api_connector()
     if not connector:
-        return render_template_string(
-            MATCHES_TEMPLATE, competition=competition, competition_name=COMPETITIONS.get(competition, competition),
-            matches=[], error="Falta configurar FOOTBALL_DATA_API_KEY en el servidor.",
+        body = render_template_string(
+            MATCHES_BODY, competition=competition, competition_name=competition_name,
+            matches=[], standings=None, scorers=None, error="Falta configurar FOOTBALL_DATA_API_KEY en el servidor.",
         )
+        return wrap_page(competition_name, body)
     try:
         upcoming = connector.fetch_upcoming(liga=competition)
     except Exception as e:
-        return render_template_string(
-            MATCHES_TEMPLATE, competition=competition, competition_name=COMPETITIONS.get(competition, competition),
-            matches=[], error=f"No se pudo consultar football-data.org: {e}",
+        body = render_template_string(
+            MATCHES_BODY, competition=competition, competition_name=competition_name,
+            matches=[], standings=None, scorers=None, error=f"No se pudo consultar football-data.org: {e}",
         )
+        return wrap_page(competition_name, body)
 
     # Los nombres se traducen solo para mostrar; el valor que va en el link
     # (equipo_local/equipo_visitante) se deja en el idioma original de la
@@ -193,14 +242,45 @@ def partidos():
             "equipo_visitante": row.equipo_visitante,
             "equipo_local_es": team_name_es(row.equipo_local),
             "equipo_visitante_es": team_name_es(row.equipo_visitante),
+            "escudo_local": _clean_nan(getattr(row, "escudo_local", None)),
+            "escudo_visitante": _clean_nan(getattr(row, "escudo_visitante", None)),
             "fecha_str": to_colombia_time(row.fecha_hora).strftime("%a %d %b, %I:%M %p") + " (hora Colombia)",
         }
         for row in upcoming.itertuples()
     ]
-    return render_template_string(
-        MATCHES_TEMPLATE, competition=competition, competition_name=COMPETITIONS.get(competition, competition),
-        matches=matches, error=None,
+
+    # Tabla de posiciones y goleadores: puramente informativos (ver
+    # discusión en el README sobre por qué no se usan para calcular
+    # tiros al arco ni ningún otro mercado). Si la competición no tiene
+    # standings/scorers disponibles (ej. torneos que no llevan tabla), se
+    # muestra igual la lista de partidos sin esas secciones.
+    standings = None
+    scorers = None
+    try:
+        raw_standings = connector.fetch_standings(competition)
+        standings = [
+            {
+                "group": s.get("group"),
+                "table": [
+                    {**row, "team_es": team_name_es(row["team"]["name"])}
+                    for row in s.get("table", [])
+                ],
+            }
+            for s in raw_standings
+        ]
+    except Exception:
+        pass
+    try:
+        raw_scorers = connector.fetch_scorers(competition, limit=10)
+        scorers = [{**s, "equipo_es": team_name_es(s["equipo"])} for s in raw_scorers]
+    except Exception:
+        pass
+
+    body = render_template_string(
+        MATCHES_BODY, competition=competition, competition_name=competition_name,
+        matches=matches, standings=standings, scorers=scorers, error=None,
     )
+    return wrap_page(competition_name, body)
 
 
 def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adjustment=0.0):
@@ -251,7 +331,24 @@ def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adju
     # original — acá se reemplaza únicamente lo que se va a mostrar.
     report["partido"]["local"] = team_name_es(local)
     report["partido"]["visitante"] = team_name_es(visitante)
+    report["escudo_local"] = _find_crest(matches_df, local)
+    report["escudo_visitante"] = _find_crest(matches_df, visitante)
     return render_html_report(report, value_bets=None)
+
+
+def _find_crest(matches_df, team_name):
+    """Busca el escudo de un equipo en el histórico ya cargado (puede
+    aparecer como local o visitante en distintas filas). Devuelve None si
+    la fuente de datos no trae escudos (ej. CSV propio en modo avanzado)."""
+    if "escudo_local" not in matches_df.columns:
+        return None
+    as_home = matches_df[matches_df["equipo_local"] == team_name]["escudo_local"].dropna()
+    if len(as_home):
+        return as_home.iloc[0]
+    as_away = matches_df[matches_df["equipo_visitante"] == team_name]["escudo_visitante"].dropna()
+    if len(as_away):
+        return as_away.iloc[0]
+    return None
 
 
 @app.route("/predecir", methods=["GET"])
@@ -303,19 +400,22 @@ def predecir_manual():
         return float(raw) / 100.0 if raw else 0.0
 
     if not local or not visitante:
-        return render_template_string(INDEX_TEMPLATE, competitions=COMPETITIONS, error="Debes indicar equipo local y visitante.")
+        body = render_template_string(INDEX_BODY, competitions=COMPETITIONS, error="Debes indicar equipo local y visitante.")
+        return wrap_page("Predictor Fútbol", body)
 
     try:
         connector = CSVConnector(matches_path=datos_path)
         matches_df, cleaning_report = load_from_connector(connector, liga=liga)
     except FileNotFoundError as e:
-        return render_template_string(INDEX_TEMPLATE, competitions=COMPETITIONS, error=str(e))
+        body = render_template_string(INDEX_BODY, competitions=COMPETITIONS, error=str(e))
+        return wrap_page("Predictor Fútbol", body)
 
     if matches_df.empty:
-        return render_template_string(
-            INDEX_TEMPLATE, competitions=COMPETITIONS,
+        body = render_template_string(
+            INDEX_BODY, competitions=COMPETITIONS,
             error="No hay partidos históricos disponibles tras la limpieza (revisa la liga o el archivo).",
         )
+        return wrap_page("Predictor Fútbol", body)
 
     return _run_prediction(
         matches_df, local, visitante,
