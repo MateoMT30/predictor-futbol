@@ -116,13 +116,28 @@ INDEX_BODY = """
 """
 
 MATCHES_BODY = """
-<h1>Próximos partidos</h1>
-<div class="subtitle">{{ competition_name }} — toca un partido para ver el pronóstico.</div>
+<h1>Partidos</h1>
+<div class="subtitle">{{ competition_name }} — toca un partido próximo para ver el pronóstico. Sube para ver días anteriores.</div>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 {% if grouped_matches %}
   {% for grupo in grouped_matches %}
-  <div class="day-header">{{ grupo.dia }}</div>
+  <div class="day-header"{% if grupo.ancla_hoy %} id="hoy"{% endif %}>{{ grupo.dia }}</div>
   {% for m in grupo.partidos %}
+  {% if m.finalizado %}
+  <div class="match-row-v2 played">
+    <div class="mr-teams">
+      <div class="mr-team">
+        {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
+        <span>{{ m.equipo_local_es }}</span>
+      </div>
+      <div class="mr-team">
+        {% if m.escudo_visitante %}<img class="crest" loading="lazy" src="{{ m.escudo_visitante }}" onerror="this.style.visibility='hidden'">{% endif %}
+        <span>{{ m.equipo_visitante_es }}</span>
+      </div>
+    </div>
+    <div class="mr-time mr-score">{{ m.marcador }}</div>
+  </div>
+  {% else %}
   <a class="match-row-v2" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
     <div class="mr-teams">
       <div class="mr-team">
@@ -136,10 +151,18 @@ MATCHES_BODY = """
     </div>
     <div class="mr-time">{{ m.hora_str }}</div>
   </a>
+  {% endif %}
   {% endfor %}
   {% endfor %}
+  <a href="#hoy" class="today-fab" title="Ir a hoy">Hoy</a>
+  <script>
+    (function () {
+      var hoy = document.getElementById('hoy');
+      if (hoy) { hoy.scrollIntoView({block: 'start'}); }
+    })();
+  </script>
 {% elif not error %}
-  <p class="subtitle">No hay partidos programados próximamente para esta competición.</p>
+  <p class="subtitle">No hay partidos para esta competición en estos días.</p>
 {% endif %}
 
 {% if standings %}
@@ -236,7 +259,7 @@ def partidos():
         )
         return wrap_page(competition_name, body)
     try:
-        upcoming = connector.fetch_upcoming(liga=competition)
+        agenda = connector.fetch_agenda(liga=competition)
     except Exception as e:
         body = render_template_string(
             MATCHES_BODY, competition=competition, competition_name=competition_name,
@@ -258,20 +281,36 @@ def partidos():
             "escudo_visitante": _clean_nan(getattr(row, "escudo_visitante", None)),
             "hora_str": to_colombia_time(row.fecha_hora).strftime("%I:%M %p"),
             "dia": day_label_es(to_colombia_time(row.fecha_hora)),
+            # Partidos ya jugados: se muestra el marcador y no son clicables
+            # para predecir (predecir un partido terminado no tiene sentido).
+            "finalizado": bool(getattr(row, "finalizado", False)),
+            "marcador": (
+                f"{int(row.goles_local)} - {int(row.goles_visitante)}"
+                if getattr(row, "finalizado", False) and row.goles_local is not None
+                else None
+            ),
         }
-        for row in upcoming.itertuples()
+        for row in agenda.itertuples()
     ]
 
-    # Agrupación por día (estilo apps deportivas: "Hoy", "Mañana", etc.),
-    # preservando el orden cronológico de "upcoming" — como ya viene
-    # ordenado ascendente, agrupar consecutivamente basta, no hace falta
-    # reordenar ni usar un dict global que podría mezclar el orden.
+    # Agrupación por día (estilo apps deportivas: "Ayer", "Hoy", "Mañana",
+    # etc.), preservando el orden cronológico — como ya viene ordenado
+    # ascendente, agrupar consecutivamente basta.
     grouped_matches = []
     for m in matches:
         if grouped_matches and grouped_matches[-1]["dia"] == m["dia"]:
             grouped_matches[-1]["partidos"].append(m)
         else:
-            grouped_matches.append({"dia": m["dia"], "partidos": [m]})
+            grouped_matches.append({"dia": m["dia"], "partidos": [m], "ancla_hoy": False})
+
+    # Se marca dónde va el ancla del botón "Hoy": el grupo cuyo día es "Hoy",
+    # o si hoy no hay partidos, el primer grupo aún no jugado (el próximo).
+    ancla = next((g for g in grouped_matches if g["dia"] == "Hoy"), None)
+    if ancla is None:
+        ancla = next((g for g in grouped_matches
+                      if any(not p["finalizado"] for p in g["partidos"])), None)
+    if ancla is not None:
+        ancla["ancla_hoy"] = True
 
     # Tabla de posiciones y goleadores: puramente informativos (ver
     # discusión en el README sobre por qué no se usan para calcular

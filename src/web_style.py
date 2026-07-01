@@ -112,6 +112,18 @@ MODERN_CSS = """
   .mr-team { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 500; }
   .mr-team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mr-time { font-size: 0.82rem; color: var(--accent2); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+  /* Partidos ya jugados: no clicables, marcador en vez de hora, atenuados */
+  .match-row-v2.played { cursor: default; opacity: 0.72; }
+  .match-row-v2.played:hover { border-color: var(--card-border); transform: none; background: var(--card); }
+  .mr-score { color: var(--text); font-size: 0.95rem; font-weight: 800; }
+  /* Botón flotante "Hoy" (estilo apps deportivas) */
+  .today-fab {
+    position: fixed; right: 16px; bottom: 18px; z-index: 50;
+    background: var(--accent); color: #fff; text-decoration: none;
+    padding: 10px 18px; border-radius: 999px; font-weight: 700; font-size: 0.9rem;
+    box-shadow: 0 6px 20px rgba(99,102,241,0.45);
+  }
+  .today-fab:active { transform: scale(0.96); }
   details summary {
     color: var(--accent2); cursor: pointer; font-size: 0.88rem; margin-top: 14px;
     font-weight: 600; list-style: none; display: flex; align-items: center; gap: 6px;

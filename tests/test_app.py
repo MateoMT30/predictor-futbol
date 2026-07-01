@@ -64,11 +64,17 @@ def test_partidos_without_api_key_shows_error():
 def test_partidos_with_mocked_connector(monkeypatch):
     monkeypatch.setenv("FOOTBALL_DATA_API_KEY", "fake-key")
     fake_df = pd.DataFrame([
+        # Partido ya jugado (dia anterior) -> debe mostrar marcador
+        {"fecha_hora": pd.Timestamp("2026-08-08 18:00"), "liga": "Premier League",
+         "equipo_local": "Team C", "equipo_visitante": "Team D",
+         "finalizado": True, "goles_local": 2, "goles_visitante": 1},
+        # Partido proximo -> clicable
         {"fecha_hora": pd.Timestamp("2026-08-10 18:00"), "liga": "Premier League",
-         "equipo_local": "Team A", "equipo_visitante": "Team B"},
+         "equipo_local": "Team A", "equipo_visitante": "Team B",
+         "finalizado": False, "goles_local": None, "goles_visitante": None},
     ])
     mock_connector = MagicMock()
-    mock_connector.fetch_upcoming.return_value = fake_df
+    mock_connector.fetch_agenda.return_value = fake_df
     with patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
         client = app.test_client()
         res = client.get("/partidos?competition=PL")
@@ -78,6 +84,9 @@ def test_partidos_with_mocked_connector(monkeypatch):
     # Agrupado por dia (estilo apps deportivas): debe mostrar la etiqueta
     # del dia relativo, ej. el nombre del dia de la semana si es lejano.
     assert b"mr-teams" in res.data
+    # El partido jugado muestra el marcador y el boton "Hoy" esta presente
+    assert b"2 - 1" in res.data
+    assert b"today-fab" in res.data
 
 
 def test_predecir_without_api_key_returns_500():

@@ -183,6 +183,55 @@ class FootballDataConnector(DataSourceConnector):
         cache_key = f"upcoming:{liga}"
         return _get_cached_or_fetch(cache_key, self.cache_ttl_seconds, fetch)
 
+    def fetch_agenda(self, liga: Optional[str] = None, dias_pasados: int = 7,
+                     dias_futuros: int = 14) -> pd.DataFrame:
+        """Agenda estilo apps deportivas (365Scores): partidos de días
+        anteriores (ya jugados, con marcador) + hoy + próximos, en un solo
+        listado ordenado cronológicamente. A diferencia de `fetch_upcoming`,
+        incluye los partidos FINISHED recientes para poder "subir" y ver los
+        de días pasados. Cada fila trae `estado`, `finalizado` y el marcador
+        (`goles_local`/`goles_visitante`, None si aún no se juega)."""
+        if not liga:
+            raise ValueError("FootballDataConnector requiere el código de competición (ej. 'PL', 'WC').")
+
+        _OCULTAR = {"CANCELLED", "POSTPONED", "SUSPENDED"}
+        _FINALIZADOS = {"FINISHED", "AWARDED"}
+
+        def fetch():
+            now = datetime.now(timezone.utc)
+            params = {
+                "dateFrom": (now - timedelta(days=dias_pasados)).date().isoformat(),
+                "dateTo": (now + timedelta(days=dias_futuros)).date().isoformat(),
+            }
+            data = self._get(f"/competitions/{liga}/matches", params)
+            rows = []
+            for m in data.get("matches", [])[:100]:
+                estado = m.get("status")
+                if estado in _OCULTAR:
+                    continue
+                score = m.get("score", {}).get("fullTime", {})
+                rows.append({
+                    "fecha_hora": pd.to_datetime(m["utcDate"]),
+                    "liga": data.get("competition", {}).get("name", liga),
+                    "equipo_local": m["homeTeam"]["name"],
+                    "equipo_visitante": m["awayTeam"]["name"],
+                    "escudo_local": m["homeTeam"].get("crest"),
+                    "escudo_visitante": m["awayTeam"].get("crest"),
+                    "estado": estado,
+                    "finalizado": estado in _FINALIZADOS,
+                    "goles_local": score.get("home"),
+                    "goles_visitante": score.get("away"),
+                })
+            cols = ["fecha_hora", "liga", "equipo_local", "equipo_visitante",
+                    "escudo_local", "escudo_visitante", "estado", "finalizado",
+                    "goles_local", "goles_visitante"]
+            if not rows:
+                return pd.DataFrame(columns=cols)
+            return pd.DataFrame(rows).sort_values("fecha_hora").reset_index(drop=True)
+
+        cache_key = f"agenda:{liga}:{dias_pasados}:{dias_futuros}"
+        return _get_cached_or_fetch(cache_key, self.cache_ttl_seconds, fetch)
+
     def fetch_standings(self, liga: str) -> list:
         """
         Tabla de posiciones. Para competiciones de grupos (ej. Mundial) la

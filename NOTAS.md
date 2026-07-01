@@ -211,6 +211,16 @@ daba timeouts y OOM (ver bug #7). Por eso el parseo NO ocurre en la web:
 
 ## Cambios de UI recientes
 
+- **Lista de partidos estilo 365Scores con días anteriores + botón "Hoy".**
+  Nuevo `fetch_agenda` (football_data_connector.py) trae partidos pasados
+  (con marcador y `finalizado=True`) + hoy + próximos, por rango de fechas
+  (dateFrom=hoy-7, dateTo=hoy+14). `partidos()` los agrupa por día ("Ayer",
+  "Hoy", "Mañana", …); los jugados muestran el marcador y NO son clicables,
+  los próximos sí llevan al pronóstico. Botón flotante `.today-fab` que
+  ancla a `#hoy` (grupo de hoy, o el primer día no jugado si hoy no hay), y
+  un script hace scroll a hoy al cargar (los pasados quedan arriba).
+  `fetch_upcoming` se conserva (compat/tests) pero la web usa `fetch_agenda`.
+
 - **Nombres de equipo en vez de "Local/Visitante"** en las tarjetas del
   reporte (córners, tiros al arco, tarjetas, goles esperados, 1X2).
   `_stat_card` recibe `home`/`away` (report_html.py).
