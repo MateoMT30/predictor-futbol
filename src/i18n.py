@@ -51,6 +51,9 @@ TEAM_NAMES_ES = {
     "Iraq": "Irak", "United Arab Emirates": "Emiratos Árabes Unidos",
     "Trinidad and Tobago": "Trinidad y Tobago", "Curaçao": "Curazao",
     "Haiti": "Haití", "Surinam": "Surinam", "DR Congo": "República Democrática del Congo",
+    # Variante de football-data.org del mismo país (el dataset internacional
+    # escribe "DR Congo"; la API escribe "Congo DR")
+    "Congo DR": "República Democrática del Congo",
 }
 
 

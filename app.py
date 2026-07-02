@@ -332,6 +332,7 @@ MATCHES_BODY = """
 {% if prev_groups %}
 <details>
   <summary>Clasificatorias y partidos previos al torneo</summary>
+  {% if prev_note %}<p class="subtitle" style="margin-top:8px;">{{ prev_note }}</p>{% endif %}
   {% for g in prev_groups %}
   <div class="day-header">{{ g.mes }}</div>
   {% for m in g.partidos %}
@@ -616,6 +617,7 @@ def partidos():
     # sección plegable para no enterrar la agenda del torneo. Son los mismos
     # datos que el modelo ya usa para predecir — esto solo los hace visibles.
     prev_groups = None
+    prev_note = None
     if competition in TOURNAMENTS:
         try:
             now = datetime.now(timezone.utc)
@@ -626,6 +628,35 @@ def partidos():
             )
         except Exception:
             hist = None
+        # SELECCIONES: la API .org no tiene clasificatorias ni amistosos (solo
+        # el torneo), así que esta sección salía vacía en el Mundial. Se llena
+        # con el MISMO dataset internacional que alimenta al modelo cuando la
+        # muestra es chica — coherencia pedida por el usuario: lo que se
+        # muestra como "partidos previos" es lo que de verdad afecta el
+        # pronóstico, con los mismos nombres de selección (no "otra selección").
+        if (hist is None or hist.empty) and competition in NATIONAL_TEAM_COMPETITIONS and matches:
+            try:
+                intl = fetch_international_results(desde=now - timedelta(days=365))
+            except Exception:
+                intl = None
+            if intl is not None and not intl.empty:
+                equipos_torneo = ({m["equipo_local"] for m in matches}
+                                  | {m["equipo_visitante"] for m in matches})
+                intl = align_team_names(intl, equipos_torneo)
+                corte = (now - timedelta(days=dias_pasados)).date()
+                previos = intl[
+                    (intl["equipo_local"].isin(equipos_torneo)
+                     | intl["equipo_visitante"].isin(equipos_torneo))
+                    & (intl["fecha"].dt.date < corte)
+                ].copy()
+                if not previos.empty:
+                    previos["fecha"] = previos["fecha"].dt.strftime("%Y-%m-%d")
+                    previos["escudo_local"] = None
+                    previos["escudo_visitante"] = None
+                    hist = previos
+                    prev_note = ("Clasificatorias y amistosos del último año de las selecciones del "
+                                 "torneo. Estos partidos son parte de la muestra con la que se "
+                                 "calculan los pronósticos (los más antiguos pesan menos).")
         if hist is not None and not hist.empty:
             meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
                         "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -666,7 +697,7 @@ def partidos():
     body = render_template_string(
         MATCHES_BODY, competition=competition, competition_name=competition_name,
         grouped_matches=grouped_matches, standings=standings, scorers=scorers,
-        teams=teams_picker, prev_groups=prev_groups, error=None,
+        teams=teams_picker, prev_groups=prev_groups, prev_note=prev_note, error=None,
     )
     return wrap_page(competition_name, body)
 

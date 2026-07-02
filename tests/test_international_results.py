@@ -87,3 +87,41 @@ def test_ensure_min_sample_usa_dataset_internacional_para_selecciones(monkeypatc
     assert any("clasificatorias y" in a and "amistosos" in a for a in avisos)
     # No hizo falta recargar la API .org con ventanas más largas
     org_loader.assert_not_called()
+
+
+def test_partidos_wc_llena_clasificatorias_desde_dataset_internacional(monkeypatch):
+    """Si la API .org no trae partidos previos (caso selecciones), la sección
+    de clasificatorias se llena con el dataset internacional, con los nombres
+    alineados a la convención de la API y una nota de coherencia con el modelo."""
+    monkeypatch.setenv("FOOTBALL_DATA_API_KEY", "test-key")
+    agenda_df = pd.DataFrame([
+        {"fecha_hora": pd.Timestamp("2026-06-11 18:00"), "liga": "Copa Mundial",
+         "equipo_local": "Spain", "equipo_visitante": "Congo DR",
+         "finalizado": True, "goles_local": 2, "goles_visitante": 0},
+    ])
+    intl = pd.DataFrame([
+        {"fecha": pd.Timestamp("2026-03-28"), "liga": "FIFA World Cup qualification",
+         "equipo_local": "Spain", "equipo_visitante": "Norway",
+         "goles_local": 3, "goles_visitante": 0},
+        # Nombre en la convención del dataset: debe renombrarse a "Congo DR"
+        {"fecha": pd.Timestamp("2026-03-20"), "liga": "FIFA World Cup qualification",
+         "equipo_local": "DR Congo", "equipo_visitante": "Zambia",
+         "goles_local": 1, "goles_visitante": 0},
+    ])
+    mock_connector = MagicMock()
+    mock_connector.fetch_agenda.return_value = agenda_df
+    mock_connector.fetch_matches.return_value = pd.DataFrame()  # .org sin previos
+    mock_connector.fetch_standings.side_effect = Exception("sin tabla")
+    mock_connector.fetch_scorers.side_effect = Exception("sin goleadores")
+    monkeypatch.setattr(app_module, "fetch_international_results", lambda desde: intl)
+
+    from app import app
+    with patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
+        res = app.test_client().get("/partidos?competition=WC")
+    html = res.data.decode("utf-8")
+    assert "Clasificatorias y partidos previos al torneo" in html
+    assert "3 - 0" in html
+    # Nombre renombrado a la convención .org y traducido para mostrar
+    assert "República Democrática del Congo" in html
+    # Nota de coherencia con el modelo
+    assert "parte de la muestra" in html
