@@ -79,3 +79,15 @@ def test_low_sample_team_generates_aviso():
     extra["equipo_visitante"] = "Debutante FC"
     report = _report_for("A", "Debutante FC", pd.concat([df, extra], ignore_index=True))
     assert any("Debutante FC" in a and "muestra" in a.lower() for a in report["avisos"])
+
+
+def test_build_report_incluye_top3_de_marcadores():
+    df = _history_with_stats()
+    report = _report_for("A", "C", df)
+    tops = report["marcadores_probables"]
+    assert len(tops) == 3
+    # Ordenados de mayor a menor probabilidad y consistentes con el #1
+    probs = [t["probabilidad"] for t in tops]
+    assert probs == sorted(probs, reverse=True)
+    mp = report["marcador_mas_probable"]
+    assert (tops[0]["local"], tops[0]["visitante"]) == (mp["local"], mp["visitante"])

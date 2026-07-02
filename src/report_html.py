@@ -330,6 +330,19 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
       <div class="score-pill"><small>Marcador exacto más probable</small>
         <span>{mp['local']}-{mp['visitante']}</span>
         <small>{_pct(mp['probabilidad'])}</small></div>"""
+
+    # Top 3 de marcadores: evita la lectura errónea "el modelo dice empate"
+    # cuando el 1-1 apenas le gana por decimales a los marcadores de victoria
+    # del favorito (la victoria reparte su probabilidad entre muchos
+    # marcadores; el empate la concentra casi toda en uno).
+    tops = report.get("marcadores_probables") or []
+    top_scores_line = ""
+    if len(tops) > 1:
+        items = " · ".join(
+            f"<b>{t['local']}-{t['visitante']}</b> ({_pct(t['probabilidad'])})" for t in tops
+        )
+        top_scores_line = f"""
+      <p class="muted" style="margin-top:10px;">Marcadores más probables: {items}</p>"""
     verdict_card = f"""
   <div class="card">
     <h2>Pronóstico del modelo</h2>
@@ -339,11 +352,12 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         <div class="verdict-sub">{_pct(pick_prob)} de probabilidad ·
         goles esperados {ge['local']:.2f} - {ge['visitante']:.2f} (total {ge['total']:.2f})</div>
       </div>{score_pill}
-    </div>
-    <p class="muted" style="margin-top:12px;">El marcador exacto compite contra miles de
-    resultados posibles en la simulación, por eso su porcentaje individual suele ser bajo —
-    no significa que el modelo esté poco seguro. Los goles esperados son el promedio si el
-    partido se jugara muchas veces en las mismas condiciones, no una predicción de marcador.</p>
+    </div>{top_scores_line}
+    <p class="muted" style="margin-top:12px;">Ojo: el marcador más probable puede ser un empate
+    aunque el pronóstico favorezca a un equipo — la victoria reparte su probabilidad entre muchos
+    marcadores (1-0, 2-0, 2-1...) mientras el empate la concentra casi toda en uno solo; por eso
+    se muestran los tres primeros. Los goles esperados son el promedio si el partido se jugara
+    muchas veces en las mismas condiciones, no una predicción de marcador.</p>
   </div>"""
 
     body = f"""

@@ -22,6 +22,7 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 # La consola de Windows por defecto usa cp1252, que no puede imprimir
@@ -88,6 +89,22 @@ def build_report(
     goals_report["handicap"] = goals_model.handicap_probabilities(
         home, away, handicap_lines, home_adjustment, away_adjustment
     )
+
+    # Top 3 de marcadores exactos (no solo el #1): mostrar un único marcador
+    # confunde cuando el más probable es un empate pero el 1X2 favorece a un
+    # equipo — el 1-1 compite SOLO por el empate mientras la victoria reparte
+    # su probabilidad entre muchos marcadores (1-0, 2-0, 2-1...). Con el top 3
+    # se ve que la diferencia entre ellos suele ser de decimales.
+    matrix = goals_model.score_matrix(home, away, home_adjustment, away_adjustment)
+    # kind="stable" sobre el negativo: ante probabilidades empatadas gana la
+    # celda de índice menor — el mismo desempate que el argmax de
+    # marcador_mas_probable, para que el #1 del top coincida siempre con él.
+    top_idx = np.argsort(-matrix, axis=None, kind="stable")[:3]
+    marcadores_probables = [
+        {"local": int(i // matrix.shape[1]), "visitante": int(i % matrix.shape[1]),
+         "probabilidad": float(matrix.flat[i])}
+        for i in top_idx
+    ]
 
     def has_data(*columns) -> bool:
         if matches_df is None:
@@ -156,6 +173,7 @@ def build_report(
         "ambos_anotan": goals_report["ambos_anotan"],
         "goles_esperados": goals_report["goles_esperados"],
         "marcador_mas_probable": goals_report["marcador_mas_probable"],
+        "marcadores_probables": marcadores_probables,
         "ajuste_manual_aplicado": goals_report["ajuste_manual_aplicado"],
         "over_under_goles": {
             line: over_under_probability(sim_result.goals_home + sim_result.goals_away, line)
