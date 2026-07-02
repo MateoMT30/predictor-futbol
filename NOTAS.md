@@ -209,6 +209,15 @@ daba timeouts y OOM (ver bug #7). Por eso el parseo NO ocurre en la web:
    `_code_for_team` con normalización tolerante (quita acentos, unifica
    separadores y la conjunción "and"), usado en get_match_stats_for_team.
 
+## Competiciones soportadas
+
+`COMPETITIONS` en football_data_connector.py — solo códigos del **plan
+gratuito** de football-data.org: WC, CL, EC, CLI (Libertadores), PL, ELC
+(Championship), PD, SA, BL1, FL1, DED, PPL, BSA (Brasileirão). MLS y Liga MX
+NO están en el plan gratis (requerirían pago). El pronóstico principal
+(1X2/goles/marcador) funciona para todas; córners/tiros/xG solo para WC (ver
+sección de fuentes: no hay fuente gratuita de esos datos para clubes).
+
 ## Cambios de UI recientes
 
 - **Lista de partidos estilo 365Scores con días anteriores + botón "Hoy".**

@@ -41,17 +41,23 @@ from .base import DataSourceConnector
 BASE_URL = "https://api.football-data.org/v4"
 
 # Competiciones cubiertas por el plan gratuito (ver football-data.org/documentation).
+# Códigos de competición soportados por el plan GRATUITO de football-data.org.
+# MLS y Liga MX NO están en el plan gratis, por eso no aparecen — agregarlas
+# requeriría un plan de pago.
 COMPETITIONS = {
     "WC": "Copa Mundial de la FIFA",
     "CL": "UEFA Champions League",
+    "EC": "Eurocopa",
+    "CLI": "Copa Libertadores",
     "PL": "Premier League (Inglaterra)",
+    "ELC": "Championship (Inglaterra)",
     "PD": "La Liga (España)",
     "SA": "Serie A (Italia)",
     "BL1": "Bundesliga (Alemania)",
     "FL1": "Ligue 1 (Francia)",
     "DED": "Eredivisie (Países Bajos)",
     "PPL": "Primeira Liga (Portugal)",
-    "EC": "Eurocopa",
+    "BSA": "Brasileirão Série A (Brasil)",
 }
 
 _cache: dict = {}  # {cache_key: (timestamp, dataframe)}
