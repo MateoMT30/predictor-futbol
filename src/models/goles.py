@@ -151,9 +151,22 @@ class DixonColesModel:
 
             log_tau = np.zeros(len(goals_home))
             if self.config.low_score_correction:
-                for i in range(len(goals_home)):
-                    t = _tau(int(goals_home[i]), int(goals_away[i]), lam_home[i], lam_away[i], rho)
-                    log_tau[i] = np.log(max(t, 1e-10))
+                # Vectorizado: tau solo difiere de 1 en las 4 celdas de
+                # marcador bajo (0-0, 0-1, 1-0, 1-1). Se calcula el factor
+                # por máscara en vez de con un bucle Python por partido —
+                # numéricamente idéntico a _tau(), pero O(n) en NumPy en vez
+                # de O(n) interpretado (crítico: el optimizador evalúa esto
+                # muchas veces sobre miles de partidos por cada fit).
+                tau = np.ones(len(goals_home))
+                m00 = (goals_home == 0) & (goals_away == 0)
+                m01 = (goals_home == 0) & (goals_away == 1)
+                m10 = (goals_home == 1) & (goals_away == 0)
+                m11 = (goals_home == 1) & (goals_away == 1)
+                tau[m00] = 1 - lam_home[m00] * lam_away[m00] * rho
+                tau[m01] = 1 + lam_home[m01] * rho
+                tau[m10] = 1 + lam_away[m10] * rho
+                tau[m11] = 1 - rho
+                log_tau = np.log(np.maximum(tau, 1e-10))
 
             ll = ll_home + ll_away + log_tau
             neg_ll = -np.sum(weights * ll)
