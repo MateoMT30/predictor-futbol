@@ -788,6 +788,8 @@ def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adju
     goals_cfg = GoalsModelConfig(
         xi=config["goals_model"]["dixon_coles_xi"], max_goals=config["goals_model"]["max_goals"],
         low_score_correction=config["goals_model"]["low_score_correction"],
+        regularization=config["goals_model"].get("regularization", 0.7),
+        max_expected_goals=config["goals_model"].get("max_expected_goals", 4.5),
     )
     goals_model = DixonColesModel(goals_cfg).fit(matches_df)
 
