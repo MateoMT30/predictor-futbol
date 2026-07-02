@@ -273,6 +273,9 @@ sección de fuentes: no hay fuente gratuita de esos datos para clubes).
   ancla a `#hoy` (grupo de hoy, o el primer día no jugado si hoy no hay), y
   un script hace scroll a hoy al cargar (los pasados quedan arriba).
   `fetch_upcoming` se conserva (compat/tests) pero la web usa `fetch_agenda`.
+  En torneos (WC, EC, CL, CLI) la app pide 45 días hacia atrás (torneo completo,
+  ej. toda la fase de grupos del Mundial); en ligas quedan 7 días para no
+  enterrar el "Hoy" bajo jornadas viejas.
   `fetch_agenda` además de la ventana de fechas trae los próximos programados
   sin límite de fecha (para competiciones con calendario espaciado o en
   reanudación), deduplicando por id de partido.

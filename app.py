@@ -288,8 +288,16 @@ def partidos():
             grouped_matches=[], standings=None, scorers=None, error="Falta configurar FOOTBALL_DATA_API_KEY en el servidor.",
         )
         return wrap_page(competition_name, body)
+    # En torneos (Mundial, Euro, Champions, Libertadores) se muestra el
+    # torneo completo hacia atrás (45 días cubren desde la fase de grupos
+    # hasta la final), no solo la última semana: el usuario quiere poder
+    # repasar los marcadores de grupos aunque ya se esté en eliminatorias.
+    # En ligas se mantienen 7 días — mostrar mes y medio de jornadas viejas
+    # sería puro ruido para llegar a "Hoy".
+    TOURNAMENTS = {"WC", "EC", "CL", "CLI"}
+    dias_pasados = 45 if competition in TOURNAMENTS else 7
     try:
-        agenda = connector.fetch_agenda(liga=competition)
+        agenda = connector.fetch_agenda(liga=competition, dias_pasados=dias_pasados)
     except Exception as e:
         body = render_template_string(
             MATCHES_BODY, competition=competition, competition_name=competition_name,
