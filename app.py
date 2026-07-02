@@ -163,7 +163,9 @@ MATCHES_BODY = """
     })();
   </script>
 {% elif not error %}
-  <p class="subtitle">No hay partidos para esta competición en estos días.</p>
+  <p class="subtitle">No hay partidos para esta competición en estos días —
+  puede estar en receso (entre temporadas o entre rondas). Prueba otra
+  competición o vuelve más cerca de la próxima fecha.</p>
 {% endif %}
 
 {% if standings %}

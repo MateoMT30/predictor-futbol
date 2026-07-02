@@ -202,38 +202,60 @@ class FootballDataConnector(DataSourceConnector):
 
         _OCULTAR = {"CANCELLED", "POSTPONED", "SUSPENDED"}
         _FINALIZADOS = {"FINISHED", "AWARDED"}
+        cols = ["fecha_hora", "liga", "equipo_local", "equipo_visitante",
+                "escudo_local", "escudo_visitante", "estado", "finalizado",
+                "goles_local", "goles_visitante"]
+
+        def _row(m, liga_name):
+            estado = m.get("status")
+            score = m.get("score", {}).get("fullTime", {})
+            return {
+                "fecha_hora": pd.to_datetime(m["utcDate"]),
+                "liga": liga_name,
+                "equipo_local": m["homeTeam"]["name"],
+                "equipo_visitante": m["awayTeam"]["name"],
+                "escudo_local": m["homeTeam"].get("crest"),
+                "escudo_visitante": m["awayTeam"].get("crest"),
+                "estado": estado,
+                "finalizado": estado in _FINALIZADOS,
+                "goles_local": score.get("home"),
+                "goles_visitante": score.get("away"),
+            }
 
         def fetch():
             now = datetime.now(timezone.utc)
-            params = {
+            rows = {}  # {match_id: row} para deduplicar entre las dos consultas
+
+            # 1) Ventana de fechas: días anteriores (con marcador) + hoy + cercanos.
+            ventana = {
                 "dateFrom": (now - timedelta(days=dias_pasados)).date().isoformat(),
                 "dateTo": (now + timedelta(days=dias_futuros)).date().isoformat(),
             }
-            data = self._get(f"/competitions/{liga}/matches", params)
-            rows = []
+            data = self._get(f"/competitions/{liga}/matches", ventana)
+            liga_name = data.get("competition", {}).get("name", liga)
             for m in data.get("matches", [])[:100]:
-                estado = m.get("status")
-                if estado in _OCULTAR:
+                if m.get("status") in _OCULTAR:
                     continue
-                score = m.get("score", {}).get("fullTime", {})
-                rows.append({
-                    "fecha_hora": pd.to_datetime(m["utcDate"]),
-                    "liga": data.get("competition", {}).get("name", liga),
-                    "equipo_local": m["homeTeam"]["name"],
-                    "equipo_visitante": m["awayTeam"]["name"],
-                    "escudo_local": m["homeTeam"].get("crest"),
-                    "escudo_visitante": m["awayTeam"].get("crest"),
-                    "estado": estado,
-                    "finalizado": estado in _FINALIZADOS,
-                    "goles_local": score.get("home"),
-                    "goles_visitante": score.get("away"),
-                })
-            cols = ["fecha_hora", "liga", "equipo_local", "equipo_visitante",
-                    "escudo_local", "escudo_visitante", "estado", "finalizado",
-                    "goles_local", "goles_visitante"]
+                rows[m.get("id")] = _row(m, liga_name)
+
+            # 2) Próximos programados SIN límite de fecha: así, si la
+            # competición tiene el calendario espaciado (ej. Champions entre
+            # rondas) o está por reanudar, igual se muestran los que vienen
+            # aunque caigan más allá de la ventana. Se hace en un try aparte
+            # para que, si falla, al menos quede lo de la ventana.
+            try:
+                data2 = self._get(f"/competitions/{liga}/matches", {"status": "SCHEDULED"})
+                liga_name2 = data2.get("competition", {}).get("name", liga)
+                for m in data2.get("matches", [])[:50]:
+                    if m.get("status") in _OCULTAR:
+                        continue
+                    rows.setdefault(m.get("id"), _row(m, liga_name2))
+            except Exception:
+                pass
+
             if not rows:
                 return pd.DataFrame(columns=cols)
-            return pd.DataFrame(rows).sort_values("fecha_hora").reset_index(drop=True)
+            return pd.DataFrame(list(rows.values())).sort_values("fecha_hora").reset_index(drop=True)
 
         cache_key = f"agenda:{liga}:{dias_pasados}:{dias_futuros}"
         return _get_cached_or_fetch(cache_key, self.cache_ttl_seconds, fetch)
