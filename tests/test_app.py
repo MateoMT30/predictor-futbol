@@ -259,14 +259,23 @@ def test_partidos_jugados_se_pintan_segun_acierto_del_backtest(monkeypatch):
         {"fecha_hora": pd.Timestamp("2026-07-01 15:00"), "liga": "Copa Mundial",
          "equipo_local": "England", "equipo_visitante": "Congo DR",
          "finalizado": True, "goles_local": 2, "goles_visitante": 1},
+        {"fecha_hora": pd.Timestamp("2026-06-30 15:00"), "liga": "Copa Mundial",
+         "equipo_local": "France", "equipo_visitante": "Sweden",
+         "finalizado": True, "goles_local": 3, "goles_visitante": 0},
         {"fecha_hora": pd.Timestamp("2026-06-29 15:00"), "liga": "Copa Mundial",
          "equipo_local": "Germany", "equipo_visitante": "Paraguay",
          "finalizado": True, "goles_local": 4, "goles_visitante": 5},
     ])
     fake_bt = {"WC": {"partidos": [
+        # marcador exacto clavado -> verde (hit)
         {"fecha": "2026-07-01", "local": "England", "visitante": "Congo DR",
          "pick": "local", "prob_pick": 0.56, "acierto": True,
          "marcador_pred": "2 - 1", "prob_marcador_pred": 0.12, "acierto_marcador": True},
+        # acertó el ganador pero no el marcador -> azul (result)
+        {"fecha": "2026-06-30", "local": "France", "visitante": "Sweden",
+         "pick": "local", "prob_pick": 0.60, "acierto": True,
+         "marcador_pred": "1 - 0", "prob_marcador_pred": 0.13, "acierto_marcador": False},
+        # falló hasta el ganador -> rojo (miss)
         {"fecha": "2026-06-29", "local": "Germany", "visitante": "Paraguay",
          "pick": "local", "prob_pick": 0.68, "acierto": False,
          "marcador_pred": "2 - 0", "prob_marcador_pred": 0.11, "acierto_marcador": False},
@@ -281,6 +290,7 @@ def test_partidos_jugados_se_pintan_segun_acierto_del_backtest(monkeypatch):
          patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
         res = app.test_client().get("/partidos?competition=WC")
     html = res.data.decode("utf-8")
-    assert "played hit" in html      # Inglaterra: acierto -> verde
-    assert "played miss" in html     # Alemania: fallo -> rojo suave
-    assert "El modelo dijo: 2 - 1 (12%)" in html
+    assert "played hit" in html       # Inglaterra: marcador exacto -> verde
+    assert "played result" in html    # Francia: acertó ganador -> azul
+    assert "played miss" in html      # Alemania: fallo -> rojo suave
+    assert "Marcador que dijo el modelo: 2 - 1 (12%) · Pick 1X2: gana local" in html

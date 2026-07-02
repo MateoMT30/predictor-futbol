@@ -284,9 +284,10 @@ MATCHES_BODY = """
 {% endif %}
 {% if hay_marcas_modelo %}
 <div class="hit-legend">
-  <span><span class="mr-hitmark">✓</span> el modelo clavó el marcador exacto</span>
-  <span><span class="mr-hitmark miss">✗</span> no</span>
-  <span class="muted">— es la vara más exigente: hasta los mejores modelos rondan 10-15% de plenos. Toca la fila para ver qué marcador dijo.</span>
+  <span><span class="mr-hitmark">✓✓</span> clavó el marcador exacto</span>
+  <span><span class="mr-hitmark result">✓</span> acertó el ganador</span>
+  <span><span class="mr-hitmark miss">✗</span> falló el ganador</span>
+  <span class="muted">— el marcador exacto es la vara más dura (10-15% hasta en modelos pro; en un Mundial goleador cae más). El ✓ azul es lo que de verdad acierta seguido. Toca la fila para ver qué dijo el modelo.</span>
 </div>
 {% endif %}
 {% if grouped_matches %}
@@ -296,7 +297,7 @@ MATCHES_BODY = """
   {% if m.finalizado %}
   {# Partido jugado: clic -> predicción RETROACTIVA (qué habría dicho el
      modelo antes del partido, sin conocer el resultado), para comparar. #}
-  <a class="match-row-v2 played{% if m.acierto_modelo is true %} hit{% elif m.acierto_modelo is false %} miss{% endif %}"
+  <a class="match-row-v2 played{% if m.estado_modelo == 'exacto' %} hit{% elif m.estado_modelo == 'resultado' %} result{% elif m.estado_modelo == 'fallo' %} miss{% endif %}"
      href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante, antes_de=m.fecha_iso) }}"
      {% if m.detalle_modelo %}title="{{ m.detalle_modelo }}"{% endif %}>
     <div class="mr-teams">
@@ -309,8 +310,9 @@ MATCHES_BODY = """
         <span>{{ m.equipo_visitante_es }}</span>
       </div>
     </div>
-    {% if m.acierto_modelo is true %}<span class="mr-hitmark" aria-label="El modelo acertó">✓</span>
-    {% elif m.acierto_modelo is false %}<span class="mr-hitmark miss" aria-label="El modelo falló">✗</span>{% endif %}
+    {% if m.estado_modelo == 'exacto' %}<span class="mr-hitmark" aria-label="El modelo clavó el marcador">✓✓</span>
+    {% elif m.estado_modelo == 'resultado' %}<span class="mr-hitmark result" aria-label="El modelo acertó el ganador">✓</span>
+    {% elif m.estado_modelo == 'fallo' %}<span class="mr-hitmark miss" aria-label="El modelo falló">✗</span>{% endif %}
     <div class="mr-time mr-score">{{ m.marcador }}</div>
   </a>
   {% else %}
@@ -558,11 +560,21 @@ def partidos():
         (p["fecha"], p["local"], p["visitante"]): p
         for p in bt.get("partidos", [])
     }
+    _PICK_ES = {"local": "gana local", "empate": "empate", "visitante": "gana visitante"}
+
     def _resultado_modelo(row):
-        """Por decisión del usuario, el ✓/✗ evalúa el MARCADOR EXACTO que
-        predijo el modelo (no el 1X2). Es la vara más exigente: 10-15% de
-        plenos es lo normal incluso en modelos profesionales — la leyenda
-        de la página lo advierte."""
+        """Semáforo de 3 estados para el partido jugado, cruzado con el
+        backtest walk-forward (pick calculado SOLO con datos anteriores):
+
+          'exacto'    -> el modelo clavó el MARCADOR exacto (lo raro, ~10-15%)
+          'resultado' -> acertó el GANADOR/1X2 aunque no el marcador (~48%)
+          'fallo'     -> ni el ganador
+
+        Antes se coloreaba solo por marcador exacto y, en torneos atípicos y
+        goleadores (este Mundial), daba casi todo ✗ — hacía ver inútil un
+        modelo que igual acierta ~la mitad de los ganadores. Separar los dos
+        niveles muestra el valor real sin ocultar lo difícil que es el pleno.
+        """
         if not getattr(row, "finalizado", False):
             return None, None
         p = bt_lookup.get((row.fecha_hora.strftime("%Y-%m-%d"), row.equipo_local, row.equipo_visitante))
@@ -570,8 +582,16 @@ def partidos():
             # Partido no evaluado aún, o backtest viejo sin marcador guardado
             # (se completa en el próximo refresco nocturno).
             return None, None
-        detalle = f"El modelo dijo: {p['marcador_pred']} ({p['prob_marcador_pred']*100:.0f}%)"
-        return bool(p["acierto_marcador"]), detalle
+        if p.get("acierto_marcador"):
+            estado = "exacto"
+        elif p.get("acierto"):
+            estado = "resultado"
+        else:
+            estado = "fallo"
+        pick_es = _PICK_ES.get(p.get("pick"), p.get("pick", "?"))
+        detalle = (f"Marcador que dijo el modelo: {p['marcador_pred']} "
+                   f"({p['prob_marcador_pred']*100:.0f}%) · Pick 1X2: {pick_es}")
+        return estado, detalle
 
     # Los nombres se traducen solo para mostrar; el valor que va en el link
     # (equipo_local/equipo_visitante) se deja en el idioma original de la
@@ -579,9 +599,9 @@ def partidos():
     # el histórico — traducirlo ahí rompería la búsqueda.
     matches = []
     for row in agenda.itertuples():
-        acierto_modelo, detalle_modelo = _resultado_modelo(row)
+        estado_modelo, detalle_modelo = _resultado_modelo(row)
         matches.append({
-            "acierto_modelo": acierto_modelo,
+            "estado_modelo": estado_modelo,
             "detalle_modelo": detalle_modelo,
             "equipo_local": row.equipo_local,
             "equipo_visitante": row.equipo_visitante,
@@ -606,7 +626,7 @@ def partidos():
 
     # La leyenda de ✓/✗ solo se muestra si al menos un partido tiene marca
     # (si el backtest no ha corrido para esta competición, no hay que explicar nada).
-    hay_marcas_modelo = any(m["acierto_modelo"] is not None for m in matches)
+    hay_marcas_modelo = any(m["estado_modelo"] is not None for m in matches)
 
     # Agrupación por día (estilo apps deportivas: "Ayer", "Hoy", "Mañana",
     # etc.), preservando el orden cronológico — como ya viene ordenado

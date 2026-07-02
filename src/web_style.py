@@ -118,10 +118,14 @@ MODERN_CSS = """
   div.match-row-v2.played { cursor: default; }
   div.match-row-v2.played:hover { border-color: var(--card-border); transform: none; background: var(--card); }
   a.match-row-v2.played:hover { opacity: 1; border-color: var(--accent2); }
-  /* Aciertos del modelo en partidos jugados (cruzados con el backtest):
-     verde = el pick 1X2 coincidió con el resultado, rojo suave = no. */
+  /* Semáforo del modelo en partidos jugados (cruzado con el backtest):
+     verde = clavó el marcador exacto, azul = acertó el ganador/1X2 pero no
+     el marcador, rojo suave = falló hasta el ganador. */
   .match-row-v2.played.hit {
     border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.07); opacity: 0.95;
+  }
+  .match-row-v2.played.result {
+    border-color: rgba(34,211,238,0.40); background: rgba(34,211,238,0.06); opacity: 0.95;
   }
   .match-row-v2.played.miss {
     border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.05);
@@ -129,6 +133,7 @@ MODERN_CSS = """
   .mr-hitmark {
     flex-shrink: 0; font-weight: 800; font-size: 0.95rem; color: var(--green);
   }
+  .mr-hitmark.result { color: var(--accent2); }
   .mr-hitmark.miss { color: var(--red); }
   .hit-legend {
     display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
