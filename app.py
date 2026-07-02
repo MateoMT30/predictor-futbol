@@ -289,7 +289,9 @@ MATCHES_BODY = """
   {% if m.finalizado %}
   {# Partido jugado: clic -> predicción RETROACTIVA (qué habría dicho el
      modelo antes del partido, sin conocer el resultado), para comparar. #}
-  <a class="match-row-v2 played" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante, antes_de=m.fecha_iso) }}">
+  <a class="match-row-v2 played{% if m.acierto_modelo is true %} hit{% elif m.acierto_modelo is false %} miss{% endif %}"
+     href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante, antes_de=m.fecha_iso) }}"
+     {% if m.detalle_modelo %}title="{{ m.detalle_modelo }}"{% endif %}>
     <div class="mr-teams">
       <div class="mr-team">
         {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
@@ -300,6 +302,8 @@ MATCHES_BODY = """
         <span>{{ m.equipo_visitante_es }}</span>
       </div>
     </div>
+    {% if m.acierto_modelo is true %}<span class="mr-hitmark" aria-label="El modelo acertó">✓</span>
+    {% elif m.acierto_modelo is false %}<span class="mr-hitmark miss" aria-label="El modelo falló">✗</span>{% endif %}
     <div class="mr-time mr-score">{{ m.marcador }}</div>
   </a>
   {% else %}
@@ -536,12 +540,38 @@ def partidos():
         )
         return wrap_page(competition_name, body)
 
+    # Cruce con el backtest nocturno: para cada partido jugado, si el
+    # backtest ya lo evaluó, se sabe si el pick del modelo (1X2, calculado
+    # SOLO con datos anteriores al partido) acertó — la lista lo pinta en
+    # verde (acierto) o rojo suave (fallo). Partidos aún no evaluados no
+    # llevan marca. Cruce por fecha + nombres de la API (ambos vienen de
+    # las mismas fuentes, así que coinciden exactos).
+    bt = _load_backtest().get(competition) or {}
+    bt_lookup = {
+        (p["fecha"], p["local"], p["visitante"]): p
+        for p in bt.get("partidos", [])
+    }
+    pick_labels = {"local": "gana local", "empate": "empate", "visitante": "gana visitante"}
+
+    def _resultado_modelo(row):
+        if not getattr(row, "finalizado", False):
+            return None, None
+        p = bt_lookup.get((row.fecha_hora.strftime("%Y-%m-%d"), row.equipo_local, row.equipo_visitante))
+        if not p:
+            return None, None
+        detalle = f"El modelo dijo: {pick_labels.get(p['pick'], p['pick'])} ({p['prob_pick']*100:.0f}%)"
+        return bool(p["acierto"]), detalle
+
     # Los nombres se traducen solo para mostrar; el valor que va en el link
     # (equipo_local/equipo_visitante) se deja en el idioma original de la
     # API, porque es el identificador que usa el modelo para cruzar contra
     # el histórico — traducirlo ahí rompería la búsqueda.
-    matches = [
-        {
+    matches = []
+    for row in agenda.itertuples():
+        acierto_modelo, detalle_modelo = _resultado_modelo(row)
+        matches.append({
+            "acierto_modelo": acierto_modelo,
+            "detalle_modelo": detalle_modelo,
             "equipo_local": row.equipo_local,
             "equipo_visitante": row.equipo_visitante,
             "equipo_local_es": team_name_es(row.equipo_local),
@@ -561,9 +591,7 @@ def partidos():
                 if getattr(row, "finalizado", False) and row.goles_local is not None
                 else None
             ),
-        }
-        for row in agenda.itertuples()
-    ]
+        })
 
     # Agrupación por día (estilo apps deportivas: "Ayer", "Hoy", "Mañana",
     # etc.), preservando el orden cronológico — como ya viene ordenado

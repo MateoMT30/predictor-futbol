@@ -189,7 +189,7 @@ def test_partido_jugado_linkea_prediccion_retroactiva(monkeypatch):
     html = res.data.decode("utf-8")
     # El partido jugado ahora es un link a la prediccion retroactiva
     assert "antes_de=2026-06-28" in html
-    assert 'class="match-row-v2 played" href=' in html
+    assert 'class="match-row-v2 played' in html
 
 
 def _df_partidos(rows):
@@ -251,3 +251,34 @@ def test_ensure_min_sample_no_hace_nada_si_la_muestra_alcanza():
             MagicMock(), "WC", df, "Spain", "Austria", "2026-07-01", [])
     loader.assert_not_called()
     assert len(result) == len(df)
+
+
+def test_partidos_jugados_se_pintan_segun_acierto_del_backtest(monkeypatch):
+    monkeypatch.setenv("FOOTBALL_DATA_API_KEY", "test-key")
+    agenda_df = pd.DataFrame([
+        {"fecha_hora": pd.Timestamp("2026-07-01 15:00"), "liga": "Copa Mundial",
+         "equipo_local": "England", "equipo_visitante": "Congo DR",
+         "finalizado": True, "goles_local": 2, "goles_visitante": 1},
+        {"fecha_hora": pd.Timestamp("2026-06-29 15:00"), "liga": "Copa Mundial",
+         "equipo_local": "Germany", "equipo_visitante": "Paraguay",
+         "finalizado": True, "goles_local": 4, "goles_visitante": 5},
+    ])
+    fake_bt = {"WC": {"partidos": [
+        {"fecha": "2026-07-01", "local": "England", "visitante": "Congo DR",
+         "pick": "local", "prob_pick": 0.56, "acierto": True},
+        {"fecha": "2026-06-29", "local": "Germany", "visitante": "Paraguay",
+         "pick": "local", "prob_pick": 0.68, "acierto": False},
+    ]}}
+    mock_connector = MagicMock()
+    mock_connector.fetch_agenda.return_value = agenda_df
+    mock_connector.fetch_matches.return_value = pd.DataFrame()
+    mock_connector.fetch_standings.side_effect = Exception()
+    mock_connector.fetch_scorers.side_effect = Exception()
+    monkeypatch.setattr(app_module, "fetch_international_results", lambda desde: pd.DataFrame())
+    with patch.object(app_module, "_load_backtest", return_value=fake_bt), \
+         patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
+        res = app.test_client().get("/partidos?competition=WC")
+    html = res.data.decode("utf-8")
+    assert "played hit" in html      # Inglaterra: acierto -> verde
+    assert "played miss" in html     # Alemania: fallo -> rojo suave
+    assert "El modelo dijo: gana local (56%)" in html

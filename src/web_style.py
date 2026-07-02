@@ -118,6 +118,18 @@ MODERN_CSS = """
   div.match-row-v2.played { cursor: default; }
   div.match-row-v2.played:hover { border-color: var(--card-border); transform: none; background: var(--card); }
   a.match-row-v2.played:hover { opacity: 1; border-color: var(--accent2); }
+  /* Aciertos del modelo en partidos jugados (cruzados con el backtest):
+     verde = el pick 1X2 coincidió con el resultado, rojo suave = no. */
+  .match-row-v2.played.hit {
+    border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.07); opacity: 0.95;
+  }
+  .match-row-v2.played.miss {
+    border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.05);
+  }
+  .mr-hitmark {
+    flex-shrink: 0; font-weight: 800; font-size: 0.95rem; color: var(--green);
+  }
+  .mr-hitmark.miss { color: var(--red); }
   .mr-score { color: var(--text); font-size: 0.95rem; font-weight: 800; }
   /* Selector "predecir cualquier enfrentamiento" */
   .picker-card {
