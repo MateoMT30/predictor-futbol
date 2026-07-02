@@ -130,6 +130,11 @@ MODERN_CSS = """
     flex-shrink: 0; font-weight: 800; font-size: 0.95rem; color: var(--green);
   }
   .mr-hitmark.miss { color: var(--red); }
+  .hit-legend {
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    font-size: 0.78rem; color: var(--text); margin: 2px 0 10px;
+  }
+  .hit-legend .muted { font-size: 0.78rem; }
   .mr-score { color: var(--text); font-size: 0.95rem; font-weight: 800; }
   /* Selector "predecir cualquier enfrentamiento" */
   .picker-card {

@@ -282,6 +282,13 @@ MATCHES_BODY = """
   <button type="submit">Ver pronóstico →</button>
 </form>
 {% endif %}
+{% if hay_marcas_modelo %}
+<div class="hit-legend">
+  <span><span class="mr-hitmark">✓</span> el modelo predijo al ganador (o empate)</span>
+  <span><span class="mr-hitmark miss">✗</span> falló</span>
+  <span class="muted">— se evalúa quién gana (1X2), no el marcador exacto</span>
+</div>
+{% endif %}
 {% if grouped_matches %}
   {% for grupo in grouped_matches %}
   <div class="day-header"{% if grupo.ancla_hoy %} id="hoy"{% endif %}>{{ grupo.dia }}</div>
@@ -593,6 +600,10 @@ def partidos():
             ),
         })
 
+    # La leyenda de ✓/✗ solo se muestra si al menos un partido tiene marca
+    # (si el backtest no ha corrido para esta competición, no hay que explicar nada).
+    hay_marcas_modelo = any(m["acierto_modelo"] is not None for m in matches)
+
     # Agrupación por día (estilo apps deportivas: "Ayer", "Hoy", "Mañana",
     # etc.), preservando el orden cronológico — como ya viene ordenado
     # ascendente, agrupar consecutivamente basta.
@@ -727,7 +738,8 @@ def partidos():
     body = render_template_string(
         MATCHES_BODY, competition=competition, competition_name=competition_name,
         grouped_matches=grouped_matches, standings=standings, scorers=scorers,
-        teams=teams_picker, prev_groups=prev_groups, prev_note=prev_note, error=None,
+        teams=teams_picker, prev_groups=prev_groups, prev_note=prev_note,
+        hay_marcas_modelo=hay_marcas_modelo, error=None,
     )
     return wrap_page(competition_name, body)
 
