@@ -213,6 +213,28 @@ daba timeouts y OOM (ver bug #7). Por eso el parseo NO ocurre en la web:
    `_code_for_team` con normalización tolerante (quita acentos, unifica
    separadores y la conjunción "and"), usado en get_match_stats_for_team.
 
+10. **Falsos "0.0" en tiros/tarjetas para equipos recién ascendidos** (visto
+    con un Arsenal vs Coventry elegido desde el selector). Causa raíz doble:
+    (a) el histórico de /predecir es "la misma competición, últimos 365 días",
+    así que un recién ascendido no tiene NI UN partido en él; (b)
+    `team_role_distribution` devolvía `mean=0.0` silenciosamente para equipos
+    sin filas, y `build_report.has_data()` solo miraba si la COLUMNA tenía
+    datos, no si CADA EQUIPO los tenía — el 0.0 llegaba al reporte como si
+    fuera pronóstico (media 0.0, rango 0-0, y over/under del total
+    artificialmente bajos porque solo contaban la mitad del partido). Fix en
+    tres capas: (1) `build_report` ahora cuenta muestra POR EQUIPO y por
+    mercado; un lado sin datos va `None` ("Sin datos en el histórico" en el
+    HTML), los totales/over-under se suprimen con explicación, y se muestra
+    el tamaño de muestra de cada equipo al pie de cada tarjeta; (2) banner de
+    "Avisos sobre los datos" en el reporte (equipo sin partidos → goles/1X2
+    lo tratan como equipo promedio; muestra < 5 → advertencia); (3)
+    `FALLBACK_HISTORY` en app.py: si el equipo no aparece en la competición,
+    se trae su historial de la liga hermana (PL<->Championship, ambas en el
+    plan gratis de .org y en co.uk) y se agrega al histórico, avisándolo en
+    el reporte. Nota: el cruce por fecha+marcador de co.uk ya protege contra
+    ambigüedades entre ligas mezcladas (si dos partidos coinciden en día y
+    marcador exacto, se omite el cruce en vez de adivinar).
+
 ## Competiciones soportadas
 
 `COMPETITIONS` en football_data_connector.py — solo códigos del **plan
@@ -319,5 +341,5 @@ $env:FOOTBALL_DATA_API_KEY = "tu_key_aqui"
 python app.py
 ```
 
-Tests: `python -m pytest tests/ -q` (65 tests al momento de escribir esto,
+Tests: `python -m pytest tests/ -q` (74 tests al momento de escribir esto,
 todos deben pasar).

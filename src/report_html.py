@@ -37,19 +37,39 @@ def _bar(label: str, value: float, color: str = "#3b82f6") -> str:
     </div>"""
 
 
-def _stat_card(title: str, summary_local: dict, summary_away: dict, summary_total: Optional[dict] = None,
-               home: str = "Local", away: str = "Visitante") -> str:
-    rows = []
-    rows.append(f"""
-      <tr><td>{html.escape(home)}</td><td>{summary_local['media']:.1f}</td>
-          <td>{summary_local['rango_esperado_p10_p90'][0]:.0f} - {summary_local['rango_esperado_p10_p90'][1]:.0f}</td></tr>""")
-    rows.append(f"""
-      <tr><td>{html.escape(away)}</td><td>{summary_away['media']:.1f}</td>
-          <td>{summary_away['rango_esperado_p10_p90'][0]:.0f} - {summary_away['rango_esperado_p10_p90'][1]:.0f}</td></tr>""")
-    if summary_total:
-        rows.append(f"""
-      <tr class="total-row"><td>Total</td><td>{summary_total['media']:.1f}</td>
-          <td>{summary_total['rango_esperado_p10_p90'][0]:.0f} - {summary_total['rango_esperado_p10_p90'][1]:.0f}</td></tr>""")
+def _stat_row(label: str, summary: Optional[dict], total: bool = False) -> str:
+    """Fila de la tabla de un mercado. summary=None significa que ESE equipo
+    no tiene datos de esa estadística en el histórico (distinto de que la
+    fuente no la traiga): se muestra explícito en vez de un falso 0.0."""
+    cls = ' class="total-row"' if total else ""
+    if summary is None:
+        return f"""
+      <tr{cls}><td>{html.escape(label)}</td><td colspan="2" class="muted">Sin datos en el histórico</td></tr>"""
+    return f"""
+      <tr{cls}><td>{html.escape(label)}</td><td>{summary['media']:.1f}</td>
+          <td>{summary['rango_esperado_p10_p90'][0]:.0f} - {summary['rango_esperado_p10_p90'][1]:.0f}</td></tr>"""
+
+
+def _sample_footer(muestras: Optional[dict], home: str, away: str) -> str:
+    """Pie con el tamaño de muestra por equipo — barato de mostrar y evita
+    que un promedio calculado sobre 2 partidos se lea igual de confiable
+    que uno sobre 19."""
+    if not muestras or muestras.get("local") is None:
+        return ""
+    return f"""
+      <p class="muted" style="margin-top:8px;">Muestra: {html.escape(home)} {muestras['local']} partido(s),
+      {html.escape(away)} {muestras['visitante']} partido(s) con este dato.</p>"""
+
+
+def _stat_card(title: str, summary_local: Optional[dict], summary_away: Optional[dict],
+               summary_total: Optional[dict] = None, home: str = "Local", away: str = "Visitante",
+               muestras: Optional[dict] = None) -> str:
+    rows = [
+        _stat_row(home, summary_local),
+        _stat_row(away, summary_away),
+    ]
+    if summary_local is not None or summary_away is not None:
+        rows.append(_stat_row("Total", summary_total, total=True))
 
     return f"""
     <div class="card">
@@ -57,7 +77,20 @@ def _stat_card(title: str, summary_local: dict, summary_away: dict, summary_tota
       <table>
         <thead><tr><th></th><th>Media</th><th>Rango esperado (P10-P90)</th></tr></thead>
         <tbody>{''.join(rows)}</tbody>
-      </table>
+      </table>{_sample_footer(muestras, home, away)}
+    </div>"""
+
+
+def _incomplete_ou_card(title: str) -> str:
+    """Se usa cuando el mercado existe pero uno de los dos equipos no tiene
+    datos: un over/under del TOTAL calculado con la mitad del partido saldría
+    artificialmente bajo y engañoso, así que se omite con explicación."""
+    return f"""
+    <div class="card">
+      <h2>{html.escape(title)}</h2>
+      <p class="muted">No se calcula: uno de los equipos no tiene datos de esta
+      estadística en el histórico, y un total calculado solo con el otro equipo
+      saldría engañosamente bajo.</p>
     </div>"""
 
 
@@ -161,31 +194,44 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     </div>"""
 
     if report.get("corners"):
+        c = report["corners"]
         corners_section = (
-            _stat_card("Córners", report["corners"]["local"], report["corners"]["visitante"], report["corners"]["total"], home=home, away=away)
-            + _over_under_card("Over/Under córners", report["over_under_corners"], "córners")
+            _stat_card("Córners", c["local"], c["visitante"], c["total"],
+                       home=home, away=away, muestras=c.get("muestras"))
+            + (_over_under_card("Over/Under córners", report["over_under_corners"], "córners")
+               if report.get("over_under_corners") else _incomplete_ou_card("Over/Under córners"))
         )
     else:
         corners_section = _no_data_card("Córners")
 
     if report.get("tiros_al_arco"):
+        t = report["tiros_al_arco"]
         shots_section = (
-            _stat_card("Tiros al arco", report["tiros_al_arco"]["local"], report["tiros_al_arco"]["visitante"], report["tiros_al_arco"]["total"], home=home, away=away)
-            + _over_under_card("Over/Under tiros al arco", report["over_under_tiros"], "tiros al arco")
+            _stat_card("Tiros al arco", t["local"], t["visitante"], t["total"],
+                       home=home, away=away, muestras=t.get("muestras"))
+            + (_over_under_card("Over/Under tiros al arco", report["over_under_tiros"], "tiros al arco")
+               if report.get("over_under_tiros") else _incomplete_ou_card("Over/Under tiros al arco"))
         )
     else:
         shots_section = _no_data_card("Tiros al arco")
 
     if report.get("tarjetas"):
+        ta = report["tarjetas"]
+        rl = ta["rojas_local"]
+        rv = ta["rojas_visitante"]
+        rl_str = f"{rl['media']:.2f}" if rl else "—"
+        rv_str = f"{rv['media']:.2f}" if rv else "—"
         cards_section = (
-            _stat_card("Tarjetas amarillas", report["tarjetas"]["amarillas_local"], report["tarjetas"]["amarillas_visitante"], report["tarjetas"]["amarillas_total"], home=home, away=away)
-            + _over_under_card("Over/Under tarjetas amarillas", report["over_under_tarjetas"], "tarjetas amarillas")
+            _stat_card("Tarjetas amarillas", ta["amarillas_local"], ta["amarillas_visitante"], ta["amarillas_total"],
+                       home=home, away=away, muestras=ta.get("muestras"))
+            + (_over_under_card("Over/Under tarjetas amarillas", report["over_under_tarjetas"], "tarjetas amarillas")
+               if report.get("over_under_tarjetas") else _incomplete_ou_card("Over/Under tarjetas amarillas"))
             + f"""
     <div class="card">
       <h2>Tarjetas rojas (media esperada)</h2>
       <div class="goals-summary">
-        <div>{html.escape(home)}<span>{report['tarjetas']['rojas_local']['media']:.2f}</span></div>
-        <div>{html.escape(away)}<span>{report['tarjetas']['rojas_visitante']['media']:.2f}</span></div>
+        <div>{html.escape(home)}<span>{rl_str}</span></div>
+        <div>{html.escape(away)}<span>{rv_str}</span></div>
       </div>
     </div>"""
         )
@@ -193,6 +239,16 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         cards_section = _no_data_card("Tarjetas")
 
     generated_at = to_colombia_time(datetime.now(timezone.utc)).strftime("%Y-%m-%d %I:%M %p") + " (hora Colombia)"
+
+    avisos = report.get("avisos") or []
+    avisos_banner = ""
+    if avisos:
+        items = "".join(f"<li>{html.escape(a)}</li>" for a in avisos)
+        avisos_banner = f"""
+    <div class="card" style="border-left:4px solid var(--amber);">
+      <h2 style="color:var(--amber);">⚠ Avisos sobre los datos</h2>
+      <ul class="muted" style="margin:0;padding-left:18px;">{items}</ul>
+    </div>"""
 
     ajuste = report.get("ajuste_manual_aplicado", {"local": 0.0, "visitante": 0.0})
     ajuste_banner = ""
@@ -223,6 +279,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
   {crests_html}
   <h1>{html.escape(home)} vs {html.escape(away)}</h1>
   <div class="subtitle">Generado el {generated_at} · predictor-futbol</div>
+  {avisos_banner}
   {ajuste_banner}
   <div class="card">
     <h2>1X2</h2>

@@ -62,14 +62,26 @@ def build_report(
     home_adjustment: float = 0.0,
     away_adjustment: float = 0.0,
     matches_df=None,
+    avisos=None,
 ) -> dict:
     """
     matches_df (opcional): el histórico usado para ajustar los modelos. Se
-    usa únicamente para detectar si la fuente de datos realmente trae
-    córners/tiros/tarjetas (ej. football-data.org gratuito NO los trae) —
-    si una columna está enteramente vacía, esos mercados se marcan como
-    no disponibles en vez de mostrar un falso "0.0" que parecería un
-    pronóstico real cuando en realidad es ausencia de dato.
+    usa para detectar ausencia de datos en dos niveles:
+
+      1. Fuente completa: si una columna (córners/tiros/tarjetas) está
+         enteramente vacía (ej. football-data.org gratuito no las trae),
+         el mercado entero se marca como no disponible.
+      2. POR EQUIPO: aunque la fuente sí traiga la columna, un equipo
+         puntual puede no tener ni una fila con dato (típico: recién
+         ascendido que no jugó esta competición el último año). Antes esto
+         producía un falso "media 0.0, rango 0-0" que parecía pronóstico
+         real; ahora ese lado se marca None ("sin datos") y los mercados
+         que combinan a ambos equipos (total, over/under) se suprimen,
+         porque un total calculado con la mitad del partido es basura.
+
+    avisos (opcional): lista de mensajes generados aguas arriba (ej. "se
+    usó historial de otra liga para X") que el reporte muestra en un
+    banner. Acá se agregan además los avisos de muestra insuficiente.
     """
     goals_report = goals_model.market_probabilities(home, away, home_adjustment, away_adjustment)
     handicap_lines = config["markets"]["handicap_lines"]
@@ -82,17 +94,62 @@ def build_report(
             return True
         return any(col in matches_df.columns and matches_df[col].notna().any() for col in columns)
 
+    def team_sample(team: str, role: str, *columns) -> int:
+        """Cuántos partidos de `team` en su rol (local/visitante) traen dato
+        en alguna de `columns`. None si no hay matches_df (CLI viejo/tests):
+        en ese caso no se puede auditar y se asume que hay datos."""
+        if matches_df is None:
+            return None
+        col_team = "equipo_local" if role == "local" else "equipo_visitante"
+        cols = [c for c in columns if c in matches_df.columns]
+        if not cols:
+            return 0
+        subset = matches_df[matches_df[col_team] == team]
+        return int(subset[cols].notna().any(axis=1).sum())
+
+    def side_ok(n) -> bool:
+        return n is None or n > 0
+
     has_corners = has_data("corners_local", "corners_visitante")
     has_shots = has_data("tiros_arco_local", "tiros_arco_visitante")
     has_cards = has_data("tarjetas_amarillas_local", "tarjetas_amarillas_visitante",
                           "tarjetas_rojas_local", "tarjetas_rojas_visitante")
+
+    n_corners = {"local": team_sample(home, "local", "corners_local"),
+                 "visitante": team_sample(away, "visitante", "corners_visitante")}
+    n_shots = {"local": team_sample(home, "local", "tiros_arco_local"),
+               "visitante": team_sample(away, "visitante", "tiros_arco_visitante")}
+    n_cards = {"local": team_sample(home, "local", "tarjetas_amarillas_local", "tarjetas_rojas_local"),
+               "visitante": team_sample(away, "visitante", "tarjetas_amarillas_visitante", "tarjetas_rojas_visitante")}
 
     corners_totals = sim_result.corners_home + sim_result.corners_away
     shots_totals = sim_result.shots_home + sim_result.shots_away
     yellow_totals = sim_result.yellow_home + sim_result.yellow_away
     red_totals = sim_result.red_home + sim_result.red_away
 
+    # Avisos de calidad de muestra: incluyen el caso extremo (equipo sin
+    # NINGÚN partido en el histórico: goles/1X2 lo tratan como equipo
+    # promedio de la liga — ver DixonColesModel) para que el usuario sepa
+    # que ese pronóstico es más débil de lo normal.
+    avisos = list(avisos or [])
+    if matches_df is not None:
+        for team in (home, away):
+            n_total = int(((matches_df["equipo_local"] == team)
+                           | (matches_df["equipo_visitante"] == team)).sum())
+            if n_total == 0:
+                avisos.append(
+                    f"{team} no tiene ningún partido en el histórico usado: el 1X2 y los goles "
+                    f"lo tratan como un equipo promedio de la competición, y los mercados de "
+                    f"córners/tiros/tarjetas de ese lado quedan sin datos."
+                )
+            elif n_total < 5:
+                avisos.append(
+                    f"{team} tiene solo {n_total} partido(s) en el histórico usado — "
+                    f"pronóstico con muestra muy chica, tómalo con pinzas."
+                )
+
     report = {
+        "avisos": avisos,
         "partido": {"local": home, "visitante": away},
         "1x2": goals_report["1x2"],
         "handicap": goals_report["handicap"],
@@ -105,34 +162,40 @@ def build_report(
             for line in config["markets"]["over_under_lines"]["goals"]
         },
         "corners": {
-            "local": summarize_distribution(sim_result.corners_home),
-            "visitante": summarize_distribution(sim_result.corners_away),
-            "total": summarize_distribution(corners_totals),
+            "local": summarize_distribution(sim_result.corners_home) if side_ok(n_corners["local"]) else None,
+            "visitante": summarize_distribution(sim_result.corners_away) if side_ok(n_corners["visitante"]) else None,
+            "total": summarize_distribution(corners_totals)
+                     if side_ok(n_corners["local"]) and side_ok(n_corners["visitante"]) else None,
+            "muestras": n_corners,
         } if has_corners else None,
         "over_under_corners": {
             line: over_under_probability(corners_totals, line)
             for line in config["markets"]["over_under_lines"]["corners"]
-        } if has_corners else None,
+        } if has_corners and side_ok(n_corners["local"]) and side_ok(n_corners["visitante"]) else None,
         "tiros_al_arco": {
-            "local": summarize_distribution(sim_result.shots_home),
-            "visitante": summarize_distribution(sim_result.shots_away),
-            "total": summarize_distribution(shots_totals),
+            "local": summarize_distribution(sim_result.shots_home) if side_ok(n_shots["local"]) else None,
+            "visitante": summarize_distribution(sim_result.shots_away) if side_ok(n_shots["visitante"]) else None,
+            "total": summarize_distribution(shots_totals)
+                     if side_ok(n_shots["local"]) and side_ok(n_shots["visitante"]) else None,
+            "muestras": n_shots,
         } if has_shots else None,
         "over_under_tiros": {
             line: over_under_probability(shots_totals, line)
             for line in config["markets"]["over_under_lines"]["shots_on_target"]
-        } if has_shots else None,
+        } if has_shots and side_ok(n_shots["local"]) and side_ok(n_shots["visitante"]) else None,
         "tarjetas": {
-            "amarillas_local": summarize_distribution(sim_result.yellow_home),
-            "amarillas_visitante": summarize_distribution(sim_result.yellow_away),
-            "amarillas_total": summarize_distribution(yellow_totals),
-            "rojas_local": summarize_distribution(sim_result.red_home),
-            "rojas_visitante": summarize_distribution(sim_result.red_away),
+            "amarillas_local": summarize_distribution(sim_result.yellow_home) if side_ok(n_cards["local"]) else None,
+            "amarillas_visitante": summarize_distribution(sim_result.yellow_away) if side_ok(n_cards["visitante"]) else None,
+            "amarillas_total": summarize_distribution(yellow_totals)
+                               if side_ok(n_cards["local"]) and side_ok(n_cards["visitante"]) else None,
+            "rojas_local": summarize_distribution(sim_result.red_home) if side_ok(n_cards["local"]) else None,
+            "rojas_visitante": summarize_distribution(sim_result.red_away) if side_ok(n_cards["visitante"]) else None,
+            "muestras": n_cards,
         } if has_cards else None,
         "over_under_tarjetas": {
             line: over_under_probability(yellow_totals, line)
             for line in config["markets"]["over_under_lines"]["cards"]
-        } if has_cards else None,
+        } if has_cards and side_ok(n_cards["local"]) and side_ok(n_cards["visitante"]) else None,
     }
     return report
 
@@ -165,33 +228,48 @@ def print_human_report(report: dict, value_bets: list) -> None:
     for line, probs in report["over_under_goles"].items():
         print(f"  {line}: Over {probs['over']*100:5.1f}%  Under {probs['under']*100:5.1f}%")
 
+    def fmt_side(summary, decimals=1):
+        # None = ese equipo no tiene datos de esta estadística en el histórico
+        # (distinto de que la fuente entera no la traiga).
+        if summary is None:
+            return "sin datos de este equipo"
+        return f"media {summary['media']:.{decimals}f}, rango esperado {summary['rango_esperado_p10_p90']}"
+
+    for aviso in report.get("avisos", []):
+        print(f"\n[AVISO] {aviso}")
+
     print("\n[Córners]")
     c = report["corners"]
     if c is None:
         print("  Sin datos suficientes (la fuente de histórico usada no trae córners).")
     else:
-        print(f"  Local     -> media {c['local']['media']:.1f}, rango esperado {c['local']['rango_esperado_p10_p90']}")
-        print(f"  Visitante -> media {c['visitante']['media']:.1f}, rango esperado {c['visitante']['rango_esperado_p10_p90']}")
-        print(f"  Total     -> media {c['total']['media']:.1f}, rango esperado {c['total']['rango_esperado_p10_p90']}")
-        for line, probs in report["over_under_corners"].items():
-            print(f"  Over/Under {line}: Over {probs['over']*100:5.1f}%  Under {probs['under']*100:5.1f}%")
+        print(f"  Local     -> {fmt_side(c['local'])}")
+        print(f"  Visitante -> {fmt_side(c['visitante'])}")
+        print(f"  Total     -> {fmt_side(c['total'])}")
+        if report["over_under_corners"]:
+            for line, probs in report["over_under_corners"].items():
+                print(f"  Over/Under {line}: Over {probs['over']*100:5.1f}%  Under {probs['under']*100:5.1f}%")
 
     print("\n[Tiros al arco]")
     t = report["tiros_al_arco"]
     if t is None:
         print("  Sin datos suficientes (la fuente de histórico usada no trae tiros al arco).")
     else:
-        print(f"  Local     -> media {t['local']['media']:.1f}, rango esperado {t['local']['rango_esperado_p10_p90']}")
-        print(f"  Visitante -> media {t['visitante']['media']:.1f}, rango esperado {t['visitante']['rango_esperado_p10_p90']}")
+        print(f"  Local     -> {fmt_side(t['local'])}")
+        print(f"  Visitante -> {fmt_side(t['visitante'])}")
 
     print("\n[Tarjetas amarillas]")
     ta = report["tarjetas"]
     if ta is None:
         print("  Sin datos suficientes (la fuente de histórico usada no trae tarjetas).")
     else:
-        print(f"  Local     -> media {ta['amarillas_local']['media']:.1f}")
-        print(f"  Visitante -> media {ta['amarillas_visitante']['media']:.1f}")
-        print(f"  Rojas (local/visitante) -> media {ta['rojas_local']['media']:.2f} / {ta['rojas_visitante']['media']:.2f}")
+        print(f"  Local     -> {fmt_side(ta['amarillas_local'])}")
+        print(f"  Visitante -> {fmt_side(ta['amarillas_visitante'])}")
+        rl = ta["rojas_local"]
+        rv = ta["rojas_visitante"]
+        rl_str = f"{rl['media']:.2f}" if rl else "sin datos"
+        rv_str = f"{rv['media']:.2f}" if rv else "sin datos"
+        print(f"  Rojas (local/visitante) -> media {rl_str} / {rv_str}")
 
     if value_bets:
         print("\n[VALUE BETS DETECTADOS]")

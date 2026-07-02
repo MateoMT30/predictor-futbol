@@ -72,3 +72,25 @@ def test_render_html_report_shows_exact_score_and_no_redundant_under_column():
     # La tabla de over/under ya no repite "Under" como columna separada
     assert "<th>Under</th>" not in html_doc
     assert "&gt;2.5 goles" in html_doc
+
+
+def test_render_html_report_marks_side_without_data_instead_of_fake_zero():
+    # Un equipo sin historial: su lado va None y el over/under del total
+    # se suprime (no debe salir "0.0" como si fuera pronóstico real).
+    report = _fake_report()
+    report["corners"]["visitante"] = None
+    report["corners"]["total"] = None
+    report["corners"]["muestras"] = {"local": 12, "visitante": 0}
+    report["over_under_corners"] = None
+    html_doc = render_html_report(report, [])
+    assert "Sin datos en el histórico" in html_doc
+    assert "No se calcula" in html_doc
+    assert "Muestra:" in html_doc
+
+
+def test_render_html_report_shows_avisos_banner():
+    report = _fake_report()
+    report["avisos"] = ["Equipo X no tiene partidos en la competición."]
+    html_doc = render_html_report(report, [])
+    assert "Avisos sobre los datos" in html_doc
+    assert "Equipo X no tiene partidos" in html_doc

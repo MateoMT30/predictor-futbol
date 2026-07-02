@@ -74,6 +74,15 @@ app = Flask(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_DATA_PATH = PROJECT_ROOT / "examples" / "historico_ejemplo.csv"
 
+# De qué competición traer historial de respaldo cuando un equipo no tiene
+# partidos en la elegida (recién ascendidos/descendidos). Solo Inglaterra por
+# ahora: es el único par primera/segunda división que cubre tanto el plan
+# gratuito de football-data.org como football-data.co.uk.
+FALLBACK_HISTORY = {
+    "PL": "ELC",
+    "ELC": "PL",
+}
+
 INDEX_BODY = """
 <h1>⚽ Predictor Fútbol</h1>
 <div class="subtitle">Elige una competición para ver los próximos partidos.</div>
@@ -384,7 +393,8 @@ def partidos():
     return wrap_page(competition_name, body)
 
 
-def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adjustment=0.0, fifa_context=None):
+def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adjustment=0.0,
+                    fifa_context=None, avisos=None):
     """Lógica compartida por el flujo de API y el modo manual: ajusta los
     modelos sobre el histórico ya cargado y arma el reporte HTML."""
     config = load_config(str(PROJECT_ROOT / "config.yaml"))
@@ -425,7 +435,7 @@ def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adju
     report = build_report(
         local, visitante, goals_model, sim_result, config,
         home_adjustment=home_adjustment, away_adjustment=away_adjustment,
-        matches_df=matches_df,
+        matches_df=matches_df, avisos=avisos,
     )
     # Traducción solo de presentación: local/visitante ya se usaron para
     # todo el cálculo (Elo, Dixon-Coles, simulación) con el nombre
@@ -484,6 +494,44 @@ def predecir():
     if matches_df.empty:
         return "No hay histórico suficiente para esta competición todavía.", 404
 
+    # Historial de respaldo para equipos sin partidos en esta competición
+    # (caso típico: recién ascendido — ej. un equipo nuevo en Premier League
+    # no jugó ni un partido de PL el último año, así que el histórico de la
+    # competición no sabe NADA de él y córners/tiros/tarjetas salían como
+    # falsos ceros). Si el equipo no aparece, se trae su historial de la
+    # competición "hermana" (PL<->Championship, las dos cubiertas por el plan
+    # gratis de la API y por football-data.co.uk) y se agrega al histórico,
+    # avisando en el reporte que se usó otra liga.
+    avisos = []
+    fallback_comp = FALLBACK_HISTORY.get(competition)
+    if fallback_comp:
+        missing = [
+            t for t in (local, visitante)
+            if not ((matches_df["equipo_local"] == t) | (matches_df["equipo_visitante"] == t)).any()
+        ]
+        if missing:
+            try:
+                fb_df, _ = load_from_connector(connector, liga=fallback_comp, desde=desde, hasta=hasta)
+            except Exception:
+                fb_df = None
+            for t in missing:
+                fb_rows = None
+                if fb_df is not None and not fb_df.empty:
+                    fb_rows = fb_df[(fb_df["equipo_local"] == t) | (fb_df["equipo_visitante"] == t)]
+                if fb_rows is not None and not fb_rows.empty:
+                    try:
+                        fb_rows = enrich_with_couk_stats(fb_rows, fallback_comp)
+                    except Exception:
+                        pass
+                    matches_df = pd.concat([matches_df, fb_rows], ignore_index=True)
+                    avisos.append(
+                        f"{team_name_es(t)} no tiene partidos en {COMPETITIONS.get(competition, competition)} "
+                        f"el último año; su pronóstico usa su historial de "
+                        f"{COMPETITIONS.get(fallback_comp, fallback_comp)} ({len(fb_rows)} partidos)."
+                    )
+            # El pipeline (Elo, ponderación por recencia) asume orden cronológico.
+            matches_df = matches_df.sort_values("fecha").reset_index(drop=True)
+
     # Enriquecimiento opcional con córners/tiros al arco oficiales de FIFA
     # (ver src/connectors/fifa_reports_connector.py) — football-data.org
     # no los trae. Solo se intenta para Mundial (los reportes PMSR son
@@ -521,7 +569,7 @@ def predecir():
         except Exception:
             pass
 
-    return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context)
+    return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context, avisos=avisos)
 
 
 @app.route("/predecir_manual", methods=["POST"])
