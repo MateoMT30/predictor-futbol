@@ -24,6 +24,7 @@ escribir los nombres de los equipos a mano usando el CSV de ejemplo — el
 mismo comportamiento que main.py, sin depender de la API.
 """
 
+import json
 import os
 
 # IMPORTANTE: esto debe ejecutarse ANTES de importar numpy/scipy/pandas
@@ -263,7 +264,51 @@ MATCHES_BODY = """
 </details>
 {% endif %}
 
+<a class="match-row" href="{{ url_for('rendimiento', competition=competition) }}" style="justify-content:center;">
+  📊 Rendimiento del modelo — aciertos y margen de error en partidos ya jugados
+</a>
 <a class="match-row" href="/" style="justify-content:center;color:var(--muted);">← Elegir otra competición</a>
+"""
+
+
+RENDIMIENTO_BODY = """
+<h1>Rendimiento del modelo</h1>
+<div class="subtitle">{{ competition_name }} — cómo le fue al modelo prediciendo los últimos
+{{ bt.n }} partidos ya jugados. Cada predicción se hizo usando SOLO los partidos anteriores a esa
+fecha (sin hacer trampa mirando el futuro), igual que si hubieras consultado la app antes del partido.</div>
+
+<div class="card">
+  <h2>Resumen</h2>
+  <div class="goals-summary">
+    <div>Aciertos del pick<span>{{ bt.aciertos }}/{{ bt.n }}</span></div>
+    <div>Tasa de acierto<span>{{ bt.acierto_pct }}%</span></div>
+    <div>Brier score<span>{{ bt.brier }}</span></div>
+  </div>
+  <p class="muted" style="margin-top:12px;">
+    <b>Cómo leerlo:</b> elegir al azar acierta ~33%. El <b>Brier score</b> mide la calidad de las
+    probabilidades (0 = perfecto, 0.667 = tirar la moneda de tres caras): castiga estar muy seguro
+    y equivocarse. Un Brier por debajo de 0.667 significa que las probabilidades del modelo
+    aportan información real. El fútbol es de bajo marcador y alto azar: ni el mejor modelo del
+    mundo pasa de ~55-60% de acierto en 1X2 — desconfía de quien prometa más.
+  </p>
+</div>
+
+{% for p in bt.partidos %}
+<div class="card" style="padding:12px 16px;">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <div style="flex:1; min-width:0;">
+      <div style="font-weight:600; font-size:0.9rem;">{{ p.local_es }} vs {{ p.visitante_es }}</div>
+      <div class="muted">{{ p.fecha }} · terminó <b>{{ p.marcador }}</b></div>
+      <div class="muted">Modelo: {{ p.pick_es }} ({{ (p.prob_pick * 100) | round(1) }}%)
+        — L {{ (p.prob_local * 100) | round(0) | int }}% / E {{ (p.prob_empate * 100) | round(0) | int }}% / V {{ (p.prob_visitante * 100) | round(0) | int }}%</div>
+    </div>
+    <div style="flex-shrink:0; font-size:1.3rem;">{{ "✅" if p.acierto else "❌" }}</div>
+  </div>
+</div>
+{% endfor %}
+
+<a class="match-row" href="{{ url_for('partidos', competition=competition) }}"
+   style="justify-content:center;color:var(--muted);">← Volver a {{ competition_name }}</a>
 """
 
 
@@ -641,6 +686,49 @@ def predecir():
             pass
 
     return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context, avisos=avisos)
+
+
+@app.route("/rendimiento", methods=["GET"])
+def rendimiento():
+    """Backtest del modelo (ver src/backtest.py): aciertos y calibración
+    sobre los últimos partidos jugados. Lee el JSON precomputado por
+    scripts/run_backtest.py — no calcula nada pesado en el request."""
+    competition = request.args.get("competition", "")
+    competition_name = COMPETITIONS.get(competition, competition)
+    bt = _load_backtest().get(competition)
+    if not bt:
+        body = render_template_string(
+            MATCHES_BODY, competition=competition, competition_name=competition_name,
+            grouped_matches=[], standings=None, scorers=None, teams=None,
+            error="Todavía no hay backtest generado para esta competición "
+                  "(se genera automáticamente cada noche; también puedes correr "
+                  "scripts/run_backtest.py).",
+        )
+        return wrap_page(competition_name, body)
+
+    bt = dict(bt)
+    pick_es = {"local": "gana local", "empate": "empate", "visitante": "gana visitante"}
+    bt["partidos"] = [
+        {**p,
+         "local_es": team_name_es(p["local"]),
+         "visitante_es": team_name_es(p["visitante"]),
+         "pick_es": pick_es.get(p["pick"], p["pick"])}
+        for p in bt["partidos"]
+    ]
+    body = render_template_string(
+        RENDIMIENTO_BODY, competition=competition, competition_name=competition_name, bt=bt,
+    )
+    return wrap_page(f"Rendimiento — {competition_name}", body)
+
+
+def _load_backtest() -> dict:
+    """Lee data/backtest.json (precomputado offline). Dict vacío si no existe."""
+    path = PROJECT_ROOT / "data" / "backtest.json"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
 @app.route("/predecir_manual", methods=["POST"])

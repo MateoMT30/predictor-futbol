@@ -133,3 +133,39 @@ def test_partidos_torneo_muestra_clasificatorias(monkeypatch):
     with patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
         client.get("/partidos?competition=PL")
     mock_connector.fetch_matches.assert_not_called()
+
+
+def test_rendimiento_sin_backtest_muestra_mensaje():
+    with patch.object(app_module, "_load_backtest", return_value={}):
+        client = app.test_client()
+        res = client.get("/rendimiento?competition=PL")
+    assert res.status_code == 200
+    assert "Todavía no hay backtest".encode("utf-8") in res.data
+
+
+def test_rendimiento_con_datos_renderiza_resumen_y_partidos():
+    fake = {"PL": {
+        "generado_en": "2026-07-01T08:00:00+00:00",
+        "n": 2, "aciertos": 1, "acierto_pct": 50.0,
+        "brier": 0.59, "brier_azar": 0.6667,
+        "partidos": [
+            {"fecha": "2026-06-28", "local": "Arsenal FC", "visitante": "Chelsea FC",
+             "marcador": "2 - 0", "prob_local": 0.55, "prob_empate": 0.25,
+             "prob_visitante": 0.20, "pick": "local", "prob_pick": 0.55,
+             "real": "local", "acierto": True, "brier": 0.3},
+            {"fecha": "2026-06-27", "local": "Everton FC", "visitante": "Fulham FC",
+             "marcador": "0 - 1", "prob_local": 0.45, "prob_empate": 0.30,
+             "prob_visitante": 0.25, "pick": "local", "prob_pick": 0.45,
+             "real": "visitante", "acierto": False, "brier": 0.9},
+        ],
+    }}
+    with patch.object(app_module, "_load_backtest", return_value=fake):
+        client = app.test_client()
+        res = client.get("/rendimiento?competition=PL")
+    assert res.status_code == 200
+    html = res.data.decode("utf-8")
+    assert "1/2" in html          # aciertos
+    assert "50.0%" in html        # tasa de acierto
+    assert "Arsenal" in html
+    assert "✅" in html and "❌" in html
+    assert "Brier" in html

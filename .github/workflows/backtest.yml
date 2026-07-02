@@ -1,0 +1,50 @@
+# Backtest nocturno del modelo (data/backtest.json).
+#
+# Evalúa el modelo contra los últimos partidos jugados de cada competición
+# (walk-forward, sin fuga de información — ver src/backtest.py) y sube el
+# JSON si cambió. La página /rendimiento de la web lee ese JSON.
+#
+# REQUIERE el secret FOOTBALL_DATA_API_KEY configurado en el repo:
+#   GitHub > Settings > Secrets and variables > Actions > New repository secret
+name: Backtest del modelo
+
+on:
+  schedule:
+    # 08:00 UTC = 3:00 am Colombia (después del refresco del cache FIFA).
+    - cron: "0 8 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Correr backtest
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: python scripts/run_backtest.py
+
+      - name: Commit y push si cambió
+        run: |
+          if git diff --quiet -- data/backtest.json && [ -z "$(git status --porcelain data/backtest.json)" ]; then
+            echo "El backtest no cambió, nada que subir."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/backtest.json
+          git commit -m "Actualizar backtest del modelo (automático)"
+          git push

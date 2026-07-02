@@ -340,7 +340,32 @@ git push
 Render redespliega automático al detectar el push (está conectado a
 GitHub, no es "Direct Upload").
 
+## Backtest / rendimiento del modelo (pedido del usuario: "probabilidad de error")
+
+- `src/backtest.py`: walk-forward backtest del 1X2 — para cada uno de los
+  últimos ~40 partidos jugados de una competición, reajusta Dixon-Coles con
+  SOLO los partidos estrictamente anteriores (sin leakage) y compara pick y
+  probabilidades contra el resultado real. Métricas: tasa de acierto del
+  pick (azar ~33%) y Brier score multiclase (0=perfecto, 0.667=uniforme).
+- Corre OFFLINE (`scripts/run_backtest.py` → `data/backtest.json`), mismo
+  patrón que el cache FIFA: reajustar el modelo 40 veces por competición es
+  demasiado para un request de Render free. Pausa de 7s entre competiciones
+  por el límite de 10 req/min de la API.
+- Web: `GET /rendimiento?competition=X` lee el JSON y muestra resumen +
+  partido a partido (✅/❌, probabilidades del modelo, marcador real). Link
+  desde la página de partidos.
+- Automático: `.github/workflows/backtest.yml` (nightly 08:00 UTC).
+  **REQUIERE el secret `FOOTBALL_DATA_API_KEY` en GitHub** (Settings >
+  Secrets and variables > Actions) — sin eso el workflow falla.
+
 ## Pendientes / ideas no implementadas
+
+- **"Agresividad" y otros factores** (pedido del usuario): los CSV de
+  football-data.co.uk traen faltas (HF/AF) además de tarjetas — se podría
+  construir un índice de agresividad por equipo (faltas+tarjetas ponderadas)
+  y usarlo como covariable del modelo de tarjetas. Antes de agregar CUALQUIER
+  factor nuevo al modelo, medir con el backtest si de verdad mejora el Brier
+  (si no mejora, no entra — regla de oro para no inflar el modelo).
 
 - Tarjetas amarillas/rojas siguen sin fuente automática (ninguna gratuita
   las tiene). Si aparece alguna fuente nueva, revisar antes que nada que
