@@ -37,17 +37,30 @@ def _bar(label: str, value: float, color: str = "#3b82f6") -> str:
     </div>"""
 
 
-def _stat_row(label: str, summary: Optional[dict], total: bool = False) -> str:
-    """Fila de la tabla de un mercado. summary=None significa que ESE equipo
-    no tiene datos de esa estadística en el histórico (distinto de que la
-    fuente no la traiga): se muestra explícito en vez de un falso 0.0."""
-    cls = ' class="total-row"' if total else ""
-    if summary is None:
-        return f"""
-      <tr{cls}><td>{html.escape(label)}</td><td colspan="2" class="muted">Sin datos en el histórico</td></tr>"""
+def _cmp_row(label: str, val_local, val_away, fmt: str = "{:.1f}") -> str:
+    """Fila de comparación local/visitante con barras que crecen desde el
+    centro (estilo SofaScore): valor local | etiqueta+barras | valor visitante.
+    Un valor None significa que ESE equipo no tiene datos de esa estadística
+    en el histórico: se muestra explícito en vez de un falso 0.0."""
+    def side(v):
+        return fmt.format(v) if v is not None else '<span class="nd">Sin datos en el histórico</span>'
+
+    bars = ""
+    numeric = all(isinstance(v, (int, float)) for v in (val_local, val_away))
+    if numeric and (val_local + val_away) > 0:
+        wl = val_local / (val_local + val_away) * 100
+        bars = f"""
+        <div class="cmp-bars">
+          <div class="half h"><div class="fill-h" style="width:{wl:.0f}%"></div></div>
+          <div class="half"><div class="fill-a" style="width:{100 - wl:.0f}%"></div></div>
+        </div>"""
+
     return f"""
-      <tr{cls}><td>{html.escape(label)}</td><td>{summary['media']:.1f}</td>
-          <td>{summary['rango_esperado_p10_p90'][0]:.0f} - {summary['rango_esperado_p10_p90'][1]:.0f}</td></tr>"""
+      <div class="cmp-row">
+        <div class="cmp-val">{side(val_local)}</div>
+        <div class="cmp-mid"><div class="cmp-label">{html.escape(label)}</div>{bars}</div>
+        <div class="cmp-val away">{side(val_away)}</div>
+      </div>"""
 
 
 def _sample_footer(muestras: Optional[dict], home: str, away: str) -> str:
@@ -61,23 +74,29 @@ def _sample_footer(muestras: Optional[dict], home: str, away: str) -> str:
       {html.escape(away)} {muestras['visitante']} partido(s) con este dato.</p>"""
 
 
+def _rng(summary: Optional[dict]) -> Optional[str]:
+    if summary is None:
+        return None
+    lo, hi = summary["rango_esperado_p10_p90"]
+    return f"{lo:.0f} - {hi:.0f}"
+
+
 def _stat_card(title: str, summary_local: Optional[dict], summary_away: Optional[dict],
                summary_total: Optional[dict] = None, home: str = "Local", away: str = "Visitante",
                muestras: Optional[dict] = None) -> str:
     rows = [
-        _stat_row(home, summary_local),
-        _stat_row(away, summary_away),
+        _cmp_row("Media", summary_local["media"] if summary_local else None,
+                 summary_away["media"] if summary_away else None),
+        _cmp_row("Rango esperado (P10-P90)", _rng(summary_local), _rng(summary_away), fmt="{}"),
     ]
-    if summary_local is not None or summary_away is not None:
-        rows.append(_stat_row("Total", summary_total, total=True))
+    total_line = ""
+    if summary_total:
+        total_line = f"""
+      <div class="cmp-total">Total: media {summary_total['media']:.1f} · rango {_rng(summary_total)}</div>"""
 
     return f"""
     <div class="card">
-      <h2>{html.escape(title)}</h2>
-      <table>
-        <thead><tr><th></th><th>Media</th><th>Rango esperado (P10-P90)</th></tr></thead>
-        <tbody>{''.join(rows)}</tbody>
-      </table>{_sample_footer(muestras, home, away)}
+      <h2>{html.escape(title)}</h2>{''.join(rows)}{total_line}{_sample_footer(muestras, home, away)}
     </div>"""
 
 
@@ -109,21 +128,27 @@ def _over_under_card(title: str, lines: dict, metric_label: str) -> str:
     metric_label: nombre en español de lo que se está contando (ej.
     "goles", "córners").
 
-    Solo se muestra la probabilidad de "más de X" (">X"). No se repite el
-    "menos de X": es matemáticamente el complemento (100% - "más de X"),
-    mostrarlo en una segunda columna era información redundante.
+    Chips con semáforo de probabilidad (verde = probable, ámbar = parejo,
+    gris = improbable) en vez de tabla: se lee de un vistazo. Solo se
+    muestra la probabilidad de "más de X" (">X"); el "menos de X" es su
+    complemento y mostrarlo era redundante.
     """
-    rows = "".join(
-        f"<tr><td>&gt;{line} {html.escape(metric_label)}</td><td>{_pct(probs['over'])}</td></tr>"
+    def chip_class(p: float) -> str:
+        if p >= 0.55:
+            return "chip-hi"
+        if p >= 0.35:
+            return "chip-mid"
+        return "chip-lo"
+
+    chips = "".join(
+        f'<span class="chip {chip_class(probs["over"])}">&gt;{line} {html.escape(metric_label)}'
+        f"<b>{_pct(probs['over'])}</b></span>"
         for line, probs in lines.items()
     )
     return f"""
     <div class="card">
       <h2>{html.escape(title)}</h2>
-      <table>
-        <thead><tr><th>Línea</th><th>Probabilidad</th></tr></thead>
-        <tbody>{rows}</tbody>
-      </table>
+      <div class="chips">{chips}</div>
     </div>"""
 
 
@@ -261,61 +286,77 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
       el modelo haya inferido de los resultados históricos.</p>
     </div>"""
 
-    def _crest_img(url):
+    # --- Header de partido (estilo SofaScore): escudos + nombres + barra de
+    # probabilidad 1X2 segmentada. Reemplaza al antiguo h1 + tarjeta "1X2" de
+    # barras apiladas: la misma información, de un solo vistazo.
+    def _crest_or_placeholder(url):
         if not url:
-            return ""
-        return f'<img class="crest-lg" loading="lazy" src="{html.escape(url)}" onerror="this.style.visibility=\'hidden\'">'
+            return '<div class="crest-ph">⚽</div>'
+        return f'<img class="crest-xl" loading="lazy" src="{html.escape(url)}" onerror="this.style.visibility=\'hidden\'">'
 
-    crest_home = report.get("escudo_local")
-    crest_away = report.get("escudo_visitante")
-    crests_html = ""
-    if crest_home or crest_away:
-        crests_html = f"""<div class="match-crests" style="margin-bottom:8px;">
-      {_crest_img(crest_home)}
-      {_crest_img(crest_away)}
-    </div>"""
+    p_home, p_draw, p_away = x1x2["local"], x1x2["empate"], x1x2["visitante"]
+    match_header = f"""
+  <div class="card match-header">
+    <div class="mh-teams">
+      <div class="mh-team">{_crest_or_placeholder(report.get("escudo_local"))}
+        <div class="mh-name">{html.escape(home)}</div></div>
+      <div class="mh-vs">VS</div>
+      <div class="mh-team">{_crest_or_placeholder(report.get("escudo_visitante"))}
+        <div class="mh-name">{html.escape(away)}</div></div>
+    </div>
+    <div class="prob-strip">
+      <div class="prob-home" style="flex:{p_home:.3f}"></div>
+      <div class="prob-draw" style="flex:{p_draw:.3f}"></div>
+      <div class="prob-away" style="flex:{p_away:.3f}"></div>
+    </div>
+    <div class="prob-legend">
+      <span><b>{_pct(p_home)}</b> gana</span>
+      <span><b>{_pct(p_draw)}</b> empate</span>
+      <span><b>{_pct(p_away)}</b> gana</span>
+    </div>
+  </div>"""
+
+    # --- Veredicto destacado (estilo 365Scores "nuestro pronóstico"): el
+    # resultado más probable, el marcador exacto y los goles esperados en
+    # UNA tarjeta arriba — antes eran tres tarjetas separadas que pesaban
+    # visualmente igual que cualquier mercado secundario.
+    pick_label, pick_prob = max(
+        ((f"Gana {home}", p_home), ("Empate", p_draw), (f"Gana {away}", p_away)),
+        key=lambda t: t[1],
+    )
+    score_pill = ""
+    if mp:
+        score_pill = f"""
+      <div class="score-pill"><small>Marcador exacto más probable</small>
+        <span>{mp['local']}-{mp['visitante']}</span>
+        <small>{_pct(mp['probabilidad'])}</small></div>"""
+    verdict_card = f"""
+  <div class="card">
+    <h2>Pronóstico del modelo</h2>
+    <div class="verdict">
+      <div>
+        <div class="verdict-pick">{html.escape(pick_label)}</div>
+        <div class="verdict-sub">{_pct(pick_prob)} de probabilidad ·
+        goles esperados {ge['local']:.2f} - {ge['visitante']:.2f} (total {ge['total']:.2f})</div>
+      </div>{score_pill}
+    </div>
+    <p class="muted" style="margin-top:12px;">El marcador exacto compite contra miles de
+    resultados posibles en la simulación, por eso su porcentaje individual suele ser bajo —
+    no significa que el modelo esté poco seguro. Los goles esperados son el promedio si el
+    partido se jugara muchas veces en las mismas condiciones, no una predicción de marcador.</p>
+  </div>"""
 
     body = f"""
-  {crests_html}
-  <h1>{html.escape(home)} vs {html.escape(away)}</h1>
-  <div class="subtitle">Generado el {generated_at} · predictor-futbol</div>
+  {match_header}
+  <div class="subtitle" style="text-align:center;">Generado el {generated_at} · predictor-futbol</div>
   {avisos_banner}
   {ajuste_banner}
-  <div class="card">
-    <h2>1X2</h2>
-    {_bar(home, x1x2["local"], "#6366f1")}
-    {_bar("Empate", x1x2["empate"], "#94a3b8")}
-    {_bar(away, x1x2["visitante"], "#ef4444")}
-  </div>
+  {verdict_card}
 
   <div class="card">
     <h2>Ambos anotan</h2>
     {_bar("Sí", btts["si"], "#22c55e")}
     {_bar("No", btts["no"], "#ef4444")}
-  </div>
-
-  {f'''<div class="card">
-    <h2>Marcador exacto más probable</h2>
-    <div class="goals-summary">
-      <div>Resultado<span>{mp['local']}-{mp['visitante']}</span></div>
-      <div>Probabilidad<span>{_pct(mp['probabilidad'])}</span></div>
-    </div>
-    <p class="muted" style="margin-top:10px;">De los miles de marcadores posibles que simula el
-    modelo, este es el único marcador entero específico con mayor probabilidad individual — su
-    porcentaje suele ser bajo (a veces menos de 15%) porque compite contra muchos otros
-    resultados posibles, no porque el modelo esté poco seguro.</p>
-  </div>''' if mp else ''}
-
-  <div class="card">
-    <h2>Promedio de goles (referencia)</h2>
-    <p class="muted">No es una predicción de marcador — es el promedio si el partido se jugara
-    muchas veces en las mismas condiciones. Alimenta el cálculo del resto de mercados (1X2,
-    over/under, marcador exacto de arriba).</p>
-    <div class="goals-summary">
-      <div>{html.escape(home)}<span>{ge['local']:.2f}</span></div>
-      <div>{html.escape(away)}<span>{ge['visitante']:.2f}</span></div>
-      <div>Total<span>{ge['total']:.2f}</span></div>
-    </div>
   </div>
 
   {_over_under_card("Over/Under goles", report["over_under_goles"], "goles")}

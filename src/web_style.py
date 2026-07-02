@@ -172,6 +172,63 @@ MODERN_CSS = """
     display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
     border-radius: 6px; background: rgba(148,163,184,0.12); font-size: 0.75rem; font-weight: 700; color: var(--muted);
   }
+  /* ---- Página de reporte (rediseño tomando lo mejor de cada app) ---- */
+  /* Header de partido con barra de probabilidad segmentada (SofaScore) */
+  .match-header { text-align: center; padding: 20px 16px 16px; }
+  .mh-teams { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .mh-team { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .crest-xl { width: 54px; height: 54px; object-fit: contain; }
+  .crest-ph {
+    width: 54px; height: 54px; border-radius: 50%; background: rgba(148,163,184,0.12);
+    display: flex; align-items: center; justify-content: center; font-size: 1.5rem;
+  }
+  .mh-name { font-weight: 700; font-size: 0.95rem; line-height: 1.25; letter-spacing: -0.01em; }
+  .mh-vs { color: var(--muted); font-weight: 800; font-size: 0.78rem; padding-top: 20px; flex-shrink: 0; }
+  .prob-strip { display: flex; height: 10px; border-radius: 999px; overflow: hidden; margin-top: 18px; gap: 2px; }
+  .prob-strip div { height: 100%; min-width: 2%; }
+  .prob-home { background: linear-gradient(90deg, var(--accent), #818cf8); }
+  .prob-draw { background: rgba(148,163,184,0.45); }
+  .prob-away { background: linear-gradient(90deg, #f87171, var(--red)); }
+  .prob-legend { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
+  .prob-legend b { color: var(--text); font-weight: 800; }
+  /* Tarjeta de veredicto (estilo 365Scores "nuestro pronóstico") */
+  /* flex-wrap: en pantallas angostas el pill del marcador baja a su propia
+     línea en vez de estrangular el texto del veredicto */
+  .verdict { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .verdict > div:first-child { flex: 1; min-width: 180px; }
+  .verdict-pick { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em; }
+  .verdict-sub { color: var(--muted); font-size: 0.82rem; margin-top: 4px; line-height: 1.45; }
+  .score-pill {
+    margin-left: auto; flex-shrink: 0; text-align: center;
+    background: rgba(99,102,241,0.14); border: 1px solid rgba(99,102,241,0.4);
+    border-radius: 14px; padding: 10px 16px;
+  }
+  .score-pill span { display: block; font-size: 1.35rem; font-weight: 800; color: var(--accent2); }
+  .score-pill small { color: var(--muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  /* Filas de comparación local/visitante con barras desde el centro (SofaScore) */
+  .cmp-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--card-border); }
+  .cmp-row:last-of-type { border-bottom: none; }
+  .cmp-val { width: 70px; font-weight: 700; font-size: 0.95rem; flex-shrink: 0; }
+  .cmp-val.away { text-align: right; }
+  .cmp-val .nd { color: var(--muted); font-weight: 400; font-size: 0.72rem; }
+  .cmp-mid { flex: 1; text-align: center; min-width: 0; }
+  .cmp-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .cmp-bars { display: flex; gap: 4px; height: 6px; }
+  .cmp-bars .half { flex: 1; display: flex; background: rgba(148,163,184,0.10); border-radius: 4px; overflow: hidden; }
+  .cmp-bars .half.h { justify-content: flex-end; }
+  .cmp-bars .fill-h { background: var(--accent); border-radius: 4px; }
+  .cmp-bars .fill-a { background: var(--red); border-radius: 4px; }
+  .cmp-total { margin-top: 10px; font-size: 0.88rem; color: var(--accent2); font-weight: 700; }
+  /* Chips de over/under con semáforo de probabilidad (Flashscore) */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border-radius: 999px; padding: 8px 13px; font-size: 0.82rem; font-weight: 600;
+    border: 1px solid var(--card-border); white-space: nowrap;
+  }
+  .chip b { font-weight: 800; margin-left: 4px; }
+  .chip-hi { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.35); color: #86efac; }
+  .chip-mid { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.35); color: #fcd34d; }
+  .chip-lo { background: rgba(148,163,184,0.07); color: var(--muted); }
   .disclaimer {
     font-size: 0.76rem; color: var(--muted); border-top: 1px solid var(--card-border);
     margin-top: 24px; padding-top: 14px; line-height: 1.5;

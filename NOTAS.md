@@ -248,6 +248,22 @@ sección de fuentes: no hay fuente gratuita de esos datos para clubes).
 
 ## Cambios de UI recientes
 
+- **Rediseño del reporte tomando lo mejor de cada app deportiva** (pedido
+  explícito del usuario: "revisa todas las apps y mira que puedes sacar de
+  cada una"). De SofaScore: header de partido (`.match-header`, escudos
+  grandes + nombres + barra de probabilidad 1X2 segmentada con leyenda) y
+  filas de comparación local/visitante con barras desde el centro
+  (`_cmp_row` en report_html.py) que reemplazan las tablas de
+  córners/tiros/tarjetas. De 365Scores: tarjeta de veredicto "Pronóstico
+  del modelo" arriba (resultado más probable + marcador exacto como pill +
+  goles esperados en una sola tarjeta; antes eran 3 tarjetas de igual peso
+  visual). De Flashscore: over/under como chips con semáforo
+  (`.chip-hi`/`-mid`/`-lo`: verde ≥55%, ámbar ≥35%, gris el resto) en vez
+  de tablas. Se eliminaron la tarjeta "1X2" de barras (la reemplaza la
+  barra del header) y "Promedio de goles" (va dentro del veredicto). CSS
+  nuevo al final de web_style.py. Nota: los value bets/cuotas quedaron
+  descartados a pedido del usuario ("si hago combinadas se pierde y
+  tampoco me interesa").
 - **Lista de partidos estilo 365Scores con días anteriores + botón "Hoy".**
   Nuevo `fetch_agenda` (football_data_connector.py) trae partidos pasados
   (con marcador y `finalizado=True`) + hoy + próximos, por rango de fechas
