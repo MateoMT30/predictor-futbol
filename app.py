@@ -155,17 +155,25 @@ def _ensure_min_sample(connector, competition, matches_df, local, visitante, has
             # partidos entre esos rivales (red de comparación conectada sin
             # traerse todas las confederaciones del planeta).
             intl = _prune_to_neighborhood(intl, {local, visitante}, hops=1)
-            # Dedupe contra lo que ya vino de la API (el torneo en curso
-            # aparece en ambas fuentes): fecha + par de equipos.
-            ya = set(zip(pd.to_datetime(matches_df["fecha"]).dt.date,
-                         matches_df["equipo_local"], matches_df["equipo_visitante"]))
-            intl = intl[[
-                (f.date(), h, a) not in ya
+            # El torneo en curso aparece en AMBAS fuentes. Para esos partidos
+            # se prefiere la versión del dataset internacional, que registra el
+            # marcador a 90 MINUTOS, sobre la de football-data, cuyo `fullTime`
+            # INCLUYE la prórroga (un 1-1 real a 90' aparece ahí como 4-5). El
+            # modelo predice a 90', así que entrenar con el 90' evita el sesgo
+            # (ver models/goles.py y el badge "TE" de la lista). Se descartan
+            # las filas de football-data que también están en el internacional,
+            # y se conservan todas las internacionales.
+            intl_keys = {
+                (pd.Timestamp(f).date(), h, a)
                 for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"])
-            ]]
+            }
             if not intl.empty and any(
                 _team_match_count(intl, t) > 0 for t in faltantes
             ):
+                matches_df = matches_df[[
+                    (pd.Timestamp(f).date(), h, a) not in intl_keys
+                    for f, h, a in zip(matches_df["fecha"], matches_df["equipo_local"], matches_df["equipo_visitante"])
+                ]]
                 matches_df = pd.concat([matches_df, intl], ignore_index=True)
                 # Las dos fuentes pueden traer la fecha con tipos distintos
                 # (string vs datetime); se unifica antes de ordenar.

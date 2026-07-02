@@ -25,16 +25,59 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT))
 
 from src.backtest import walk_forward_backtest  # noqa: E402
 from src.connectors.football_data_connector import FootballDataConnector, COMPETITIONS  # noqa: E402
+from src.connectors.international_results_connector import (  # noqa: E402
+    align_team_names, fetch_international_results,
+)
 from src.data_loader import load_from_connector  # noqa: E402
 from src.main import load_config  # noqa: E402
 from src.models.goles import GoalsModelConfig  # noqa: E402
 
 OUT_PATH = _REPO_ROOT / "data" / "backtest.json"
+
+# Torneos de selecciones: football-data solo trae los partidos del torneo y su
+# `fullTime` incluye la prórroga. Para estos se mezcla el dataset internacional
+# (clasificatorias + amistosos, marcador a 90 MINUTOS) y se PREFIERE su versión
+# en los partidos presentes en ambas fuentes — así el backtest evalúa a 90',
+# igual que predice el modelo (evita calificar un 1-1 real a 90' como 4-5).
+NATIONAL_TEAM_COMPETITIONS = {"WC", "EC"}
+
+
+def _merge_90min(matches_df, api_desde):
+    """Devuelve matches_df con los partidos de torneo reemplazados por su
+    versión a 90' del dataset internacional (nombres alineados a la API).
+    Degradación segura: si el dataset no está disponible, devuelve la entrada
+    tal cual (mejor un backtest con prórroga que ninguno)."""
+    try:
+        intl = fetch_international_results(desde=api_desde)
+    except Exception:
+        intl = None
+    if intl is None or intl.empty:
+        return matches_df
+    equipos_api = set(matches_df["equipo_local"]) | set(matches_df["equipo_visitante"])
+    intl = align_team_names(intl, equipos_api)
+    # Solo interesan equipos que también están en la API del torneo (no traer
+    # el planeta entero); esto conecta el histórico sin inflarlo.
+    intl = intl[intl["equipo_local"].isin(equipos_api) | intl["equipo_visitante"].isin(equipos_api)]
+    if intl.empty:
+        return matches_df
+    intl_keys = {
+        (pd.Timestamp(f).date(), h, a)
+        for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"])
+    }
+    base = matches_df[[
+        (pd.Timestamp(f).date(), h, a) not in intl_keys
+        for f, h, a in zip(matches_df["fecha"], matches_df["equipo_local"], matches_df["equipo_visitante"])
+    ]]
+    out = pd.concat([base, intl], ignore_index=True)
+    out["fecha"] = pd.to_datetime(out["fecha"])
+    return out.sort_values("fecha").reset_index(drop=True)
 
 
 def main() -> int:
@@ -67,6 +110,12 @@ def main() -> int:
         if matches_df.empty:
             print(f"  {code}: histórico vacío, se omite.")
             continue
+
+        # Selecciones: reemplazar por marcadores a 90' (ver _merge_90min).
+        if code in NATIONAL_TEAM_COMPETITIONS:
+            antes = len(matches_df)
+            matches_df = _merge_90min(matches_df, hoy - timedelta(days=1095))
+            print(f"  {code}: histórico a 90' (internacional): {antes} -> {len(matches_df)} partidos")
 
         t0 = time.time()
         result = walk_forward_backtest(matches_df, goals_cfg)

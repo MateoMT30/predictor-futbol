@@ -240,6 +240,34 @@ def test_ensure_min_sample_amplia_ventana_cuando_hay_pocos_partidos():
     assert any("decaimiento temporal" in a for a in avisos)
 
 
+def test_ensure_min_sample_prefiere_marcador_90min_sobre_prorroga():
+    """En selecciones, si un partido del torneo está en football-data (con
+    prórroga: 4-5) y en el dataset internacional (a 90': 1-1), el histórico de
+    entrenamiento debe quedarse con el 1-1 — el modelo predice a 90'."""
+    api = _df_partidos([
+        {"fecha": "2026-06-29", "equipo_local": "Germany", "equipo_visitante": "Paraguay",
+         "goles_local": 4, "goles_visitante": 5},  # marcador CON prórroga
+    ])
+    filas = [{"fecha": "2026-06-29", "equipo_local": "Germany", "equipo_visitante": "Paraguay",
+              "goles_local": 1, "goles_visitante": 1}]  # mismo partido, a 90'
+    for i in range(10):
+        filas.append({"fecha": f"2025-{(i % 12) + 1:02d}-05", "equipo_local": "Germany",
+                      "equipo_visitante": f"Rival{i}", "goles_local": 2, "goles_visitante": 0})
+        filas.append({"fecha": f"2025-{(i % 12) + 1:02d}-12", "equipo_local": "Paraguay",
+                      "equipo_visitante": f"Rival{i}", "goles_local": 1, "goles_visitante": 1})
+    intl = _df_partidos(filas)
+
+    avisos = []
+    with patch.object(app_module, "fetch_international_results", return_value=intl), \
+         patch.object(app_module, "align_team_names", side_effect=lambda df, ref: df):
+        result = app_module._ensure_min_sample(
+            MagicMock(), "WC", api, "Germany", "Paraguay", "2026-07-01", avisos)
+    gp = result[(result["equipo_local"] == "Germany") & (result["equipo_visitante"] == "Paraguay")]
+    assert len(gp) == 1, "el partido no debe quedar duplicado entre las dos fuentes"
+    assert int(gp.iloc[0]["goles_local"]) == 1 and int(gp.iloc[0]["goles_visitante"]) == 1, \
+        "debe conservarse el marcador a 90' (1-1), no el de prórroga (4-5)"
+
+
 def test_ensure_min_sample_no_hace_nada_si_la_muestra_alcanza():
     filas = [{"fecha": f"2026-0{(i % 6) + 1}-15",
               "equipo_local": "Spain" if i % 2 == 0 else "Austria",
