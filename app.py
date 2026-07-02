@@ -284,9 +284,9 @@ MATCHES_BODY = """
 {% endif %}
 {% if hay_marcas_modelo %}
 <div class="hit-legend">
-  <span><span class="mr-hitmark">✓</span> el modelo predijo al ganador (o empate)</span>
-  <span><span class="mr-hitmark miss">✗</span> falló</span>
-  <span class="muted">— se evalúa quién gana (1X2), no el marcador exacto</span>
+  <span><span class="mr-hitmark">✓</span> el modelo clavó el marcador exacto</span>
+  <span><span class="mr-hitmark miss">✗</span> no</span>
+  <span class="muted">— es la vara más exigente: hasta los mejores modelos rondan 10-15% de plenos. Toca la fila para ver qué marcador dijo.</span>
 </div>
 {% endif %}
 {% if grouped_matches %}
@@ -558,16 +558,20 @@ def partidos():
         (p["fecha"], p["local"], p["visitante"]): p
         for p in bt.get("partidos", [])
     }
-    pick_labels = {"local": "gana local", "empate": "empate", "visitante": "gana visitante"}
-
     def _resultado_modelo(row):
+        """Por decisión del usuario, el ✓/✗ evalúa el MARCADOR EXACTO que
+        predijo el modelo (no el 1X2). Es la vara más exigente: 10-15% de
+        plenos es lo normal incluso en modelos profesionales — la leyenda
+        de la página lo advierte."""
         if not getattr(row, "finalizado", False):
             return None, None
         p = bt_lookup.get((row.fecha_hora.strftime("%Y-%m-%d"), row.equipo_local, row.equipo_visitante))
-        if not p:
+        if not p or "marcador_pred" not in p:
+            # Partido no evaluado aún, o backtest viejo sin marcador guardado
+            # (se completa en el próximo refresco nocturno).
             return None, None
-        detalle = f"El modelo dijo: {pick_labels.get(p['pick'], p['pick'])} ({p['prob_pick']*100:.0f}%)"
-        return bool(p["acierto"]), detalle
+        detalle = f"El modelo dijo: {p['marcador_pred']} ({p['prob_marcador_pred']*100:.0f}%)"
+        return bool(p["acierto_marcador"]), detalle
 
     # Los nombres se traducen solo para mostrar; el valor que va en el link
     # (equipo_local/equipo_visitante) se deja en el idioma original de la

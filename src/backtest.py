@@ -126,6 +126,14 @@ def walk_forward_backtest(
         gl, gv = int(row["goles_local"]), int(row["goles_visitante"])
         real = _actual_outcome(gl, gv)
         pick = max(probs, key=probs.get)
+
+        # Marcador exacto predicho (argmax de la matriz) y si lo clavó: es
+        # la vara que el usuario quiere ver en la lista de partidos. Nota de
+        # expectativas: acertar el marcador exacto ronda 10-15% incluso para
+        # modelos profesionales — muchos más ✗ que ✓ es lo normal.
+        mp_i, mp_j = np.unravel_index(np.argmax(matrix), matrix.shape)
+        marcador_pred = f"{int(mp_i)} - {int(mp_j)}"
+        acierto_marcador = (int(mp_i) == gl and int(mp_j) == gv)
         brier = sum((probs[k] - (1.0 if k == real else 0.0)) ** 2 for k in ("local", "empate", "visitante"))
 
         partidos.append({
@@ -140,6 +148,9 @@ def walk_forward_backtest(
             "prob_pick": round(probs[pick], 4),
             "real": real,
             "acierto": pick == real,
+            "marcador_pred": marcador_pred,
+            "prob_marcador_pred": round(float(matrix[mp_i, mp_j]), 4),
+            "acierto_marcador": acierto_marcador,
             "brier": round(brier, 4),
             # Mercados adicionales (probabilidad del "sí" y qué pasó):
             "prob_over25": round(p_over25, 4),

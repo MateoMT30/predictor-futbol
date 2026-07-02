@@ -265,9 +265,11 @@ def test_partidos_jugados_se_pintan_segun_acierto_del_backtest(monkeypatch):
     ])
     fake_bt = {"WC": {"partidos": [
         {"fecha": "2026-07-01", "local": "England", "visitante": "Congo DR",
-         "pick": "local", "prob_pick": 0.56, "acierto": True},
+         "pick": "local", "prob_pick": 0.56, "acierto": True,
+         "marcador_pred": "2 - 1", "prob_marcador_pred": 0.12, "acierto_marcador": True},
         {"fecha": "2026-06-29", "local": "Germany", "visitante": "Paraguay",
-         "pick": "local", "prob_pick": 0.68, "acierto": False},
+         "pick": "local", "prob_pick": 0.68, "acierto": False,
+         "marcador_pred": "2 - 0", "prob_marcador_pred": 0.11, "acierto_marcador": False},
     ]}}
     mock_connector = MagicMock()
     mock_connector.fetch_agenda.return_value = agenda_df
@@ -281,4 +283,4 @@ def test_partidos_jugados_se_pintan_segun_acierto_del_backtest(monkeypatch):
     html = res.data.decode("utf-8")
     assert "played hit" in html      # Inglaterra: acierto -> verde
     assert "played miss" in html     # Alemania: fallo -> rojo suave
-    assert "El modelo dijo: gana local (56%)" in html
+    assert "El modelo dijo: 2 - 1 (12%)" in html

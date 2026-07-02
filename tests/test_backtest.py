@@ -79,3 +79,14 @@ def test_backtest_evalua_mercados_adicionales():
     assert isinstance(p["real_btts"], bool)
     # Consistencia doble oportunidad: 1X + prob_visitante = 1 (mismas probs)
     assert p["prob_local"] + p["prob_empate"] + p["prob_visitante"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_backtest_guarda_marcador_exacto_predicho():
+    result = walk_forward_backtest(_synthetic_history(), max_matches=6, min_history=40)
+    for p in result["partidos"]:
+        assert " - " in p["marcador_pred"]
+        assert 0.0 < p["prob_marcador_pred"] <= 1.0
+        assert isinstance(p["acierto_marcador"], bool)
+        # Coherencia: si acerto_marcador, el marcador real es el predicho
+        if p["acierto_marcador"]:
+            assert p["marcador_pred"] == p["marcador"]
