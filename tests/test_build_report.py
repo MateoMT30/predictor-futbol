@@ -91,3 +91,31 @@ def test_build_report_incluye_top3_de_marcadores():
     assert probs == sorted(probs, reverse=True)
     mp = report["marcador_mas_probable"]
     assert (tops[0]["local"], tops[0]["visitante"]) == (mp["local"], mp["visitante"])
+
+
+def test_build_report_incluye_marcador_condicional_y_forma():
+    df = _history_with_stats()
+    report = _report_for("A", "C", df)
+    mc = report["marcador_condicional"]
+    # El escenario condicional corresponde al pick del 1X2
+    pick = max(report["1x2"], key=report["1x2"].get)
+    assert mc["resultado"] == pick
+    assert 0.0 < mc["prob_dentro_escenario"] <= 1.0
+    # Coherencia con la región: si el pick es local, el marcador es de victoria local
+    if pick == "local":
+        assert mc["local"] > mc["visitante"]
+    elif pick == "visitante":
+        assert mc["local"] < mc["visitante"]
+    else:
+        assert mc["local"] == mc["visitante"]
+    # Forma reciente: racha de hasta 5 con letras válidas y goles coherentes
+    f = report["forma"]["local"]
+    assert f is not None and 1 <= f["n"] <= 5
+    assert set(f["racha"]) <= {"G", "E", "P"}
+    assert f["gf"] >= 0 and f["gc"] >= 0
+
+
+def test_forma_none_si_equipo_sin_partidos():
+    df = _history_with_stats()
+    report = _report_for("A", "Recien Ascendido FC", df)
+    assert report["forma"]["visitante"] is None

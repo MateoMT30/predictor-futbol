@@ -222,6 +222,15 @@ MODERN_CSS = """
   .cmp-bars .fill-h { background: var(--accent); border-radius: 4px; }
   .cmp-bars .fill-a { background: var(--red); border-radius: 4px; }
   .cmp-total { margin-top: 10px; font-size: 0.88rem; color: var(--accent2); font-weight: 700; }
+  /* Racha de forma reciente (G/E/P, estilo apps deportivas) */
+  .fb {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 6px; margin-right: 4px;
+    font-size: 0.72rem; font-weight: 800; color: #fff;
+  }
+  .fb-g { background: var(--green); }
+  .fb-e { background: rgba(148,163,184,0.55); }
+  .fb-p { background: var(--red); }
   /* Chips de over/under con semáforo de probabilidad (Flashscore) */
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {

@@ -106,6 +106,50 @@ def build_report(
         for i in top_idx
     ]
 
+    # Marcador CONDICIONAL al resultado más probable ("si gana X, ¿qué
+    # marcador logra?"). Pedido del usuario: el marcador más probable a
+    # secas es conservador (gana casi siempre un 1-0/1-1 de probabilidad
+    # bajita); esto muestra la tendencia del ganador: el marcador más
+    # típico DENTRO de sus victorias (o de los empates, si el empate es
+    # lo más probable), con su peso relativo dentro de ese escenario.
+    x1x2 = goals_report["1x2"]
+    pick_1x2 = max(x1x2, key=x1x2.get)
+    rows_idx, cols_idx = np.indices(matrix.shape)
+    region = {"local": rows_idx > cols_idx, "empate": rows_idx == cols_idx,
+              "visitante": rows_idx < cols_idx}[pick_1x2]
+    masked = np.where(region, matrix, -1.0)
+    ci, cj = np.unravel_index(np.argmax(masked), matrix.shape)
+    region_total = float(matrix[region].sum())
+    marcador_condicional = {
+        "resultado": pick_1x2,
+        "local": int(ci), "visitante": int(cj),
+        "probabilidad": float(matrix[ci, cj]),
+        "prob_dentro_escenario": float(matrix[ci, cj] / region_total) if region_total > 0 else 0.0,
+    }
+
+    def _forma_reciente(team, n_partidos=5):
+        """Racha de los últimos partidos del equipo (más reciente primero):
+        'G'/'E'/'P' + goles a favor y en contra. Es la "tendencia" visible:
+        el rendimiento reciente sobre el que se apoya el pronóstico (los
+        modelos ya ponderan más lo reciente; esto lo hace transparente)."""
+        if matches_df is None:
+            return None
+        sub = matches_df[(matches_df["equipo_local"] == team)
+                         | (matches_df["equipo_visitante"] == team)]
+        sub = sub.sort_values("fecha").tail(n_partidos)
+        racha, gf, gc = [], 0, 0
+        for row in sub.itertuples():
+            mine, theirs = ((row.goles_local, row.goles_visitante)
+                            if row.equipo_local == team
+                            else (row.goles_visitante, row.goles_local))
+            racha.append("G" if mine > theirs else ("E" if mine == theirs else "P"))
+            gf += int(mine)
+            gc += int(theirs)
+        if not racha:
+            return None
+        racha.reverse()  # más reciente primero
+        return {"racha": racha, "gf": gf, "gc": gc, "n": len(racha)}
+
     def has_data(*columns) -> bool:
         if matches_df is None:
             return True
@@ -174,6 +218,8 @@ def build_report(
         "goles_esperados": goals_report["goles_esperados"],
         "marcador_mas_probable": goals_report["marcador_mas_probable"],
         "marcadores_probables": marcadores_probables,
+        "marcador_condicional": marcador_condicional,
+        "forma": {"local": _forma_reciente(home), "visitante": _forma_reciente(away)},
         "ajuste_manual_aplicado": goals_report["ajuste_manual_aplicado"],
         "over_under_goles": {
             line: over_under_probability(sim_result.goals_home + sim_result.goals_away, line)

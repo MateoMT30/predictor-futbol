@@ -343,6 +343,18 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         )
         top_scores_line = f"""
       <p class="muted" style="margin-top:10px;">Marcadores más probables: {items}</p>"""
+
+    # Escenario del ganador ("tendencia"): el marcador más típico DENTRO del
+    # resultado que el modelo ve más probable — menos conservador que el
+    # marcador más probable a secas, que suele ser un 1-0/1-1 tibio.
+    mc = report.get("marcador_condicional")
+    conditional_line = ""
+    if mc and mc["resultado"] != "empate":
+        quien = home if mc["resultado"] == "local" else away
+        conditional_line = f"""
+      <p class="muted">Si se impone {html.escape(quien)}, su marcador más típico es
+      <b>{mc['local']}-{mc['visitante']}</b> ({_pct(mc['prob_dentro_escenario'])} de sus victorias
+      simuladas).</p>"""
     verdict_card = f"""
   <div class="card">
     <h2>Pronóstico del modelo</h2>
@@ -352,7 +364,7 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         <div class="verdict-sub">{_pct(pick_prob)} de probabilidad ·
         goles esperados {ge['local']:.2f} - {ge['visitante']:.2f} (total {ge['total']:.2f})</div>
       </div>{score_pill}
-    </div>{top_scores_line}
+    </div>{top_scores_line}{conditional_line}
     <p class="muted" style="margin-top:12px;">Ojo: el marcador más probable puede ser un empate
     aunque el pronóstico favorezca a un equipo — la victoria reparte su probabilidad entre muchos
     marcadores (1-0, 2-0, 2-1...) mientras el empate la concentra casi toda en uno solo; por eso
@@ -360,12 +372,41 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     muchas veces en las mismas condiciones, no una predicción de marcador.</p>
   </div>"""
 
+    # Tarjeta de forma reciente ("tendencia"): racha de los últimos partidos
+    # de cada equipo con goles a favor/en contra — el rendimiento sobre el
+    # que se apoya el pronóstico, visible en vez de implícito.
+    forma = report.get("forma") or {}
+    forma_card = ""
+    if forma.get("local") or forma.get("visitante"):
+        def _forma_row(team, f):
+            if not f:
+                return f"""
+        <div class="cmp-row"><div class="cmp-val">{html.escape(team)}</div>
+          <div class="cmp-mid muted">Sin partidos recientes en el histórico</div></div>"""
+            badges = "".join(f'<span class="fb fb-{r.lower()}">{r}</span>' for r in f["racha"])
+            return f"""
+        <div class="cmp-row">
+          <div class="cmp-val" style="width:auto;min-width:70px;">{html.escape(team)}</div>
+          <div class="cmp-mid" style="text-align:left;">{badges}</div>
+          <div class="cmp-val away" style="width:auto;">GF {f['gf']} · GC {f['gc']}</div>
+        </div>"""
+
+        forma_card = f"""
+    <div class="card">
+      <h2>Forma reciente (tendencia)</h2>{_forma_row(home, forma.get("local"))}{_forma_row(away, forma.get("visitante"))}
+      <p class="muted" style="margin-top:8px;">Últimos {max((forma.get("local") or {}).get("n", 0),
+      (forma.get("visitante") or {}).get("n", 0))} partidos, el más reciente primero
+      (G = ganó, E = empató, P = perdió; GF/GC = goles a favor/en contra en esa racha).
+      El modelo ya pondera más lo reciente — esta tarjeta lo hace visible.</p>
+    </div>"""
+
     body = f"""
   {match_header}
   <div class="subtitle" style="text-align:center;">Generado el {generated_at} · predictor-futbol</div>
   {avisos_banner}
   {ajuste_banner}
   {verdict_card}
+  {forma_card}
 
   <div class="card">
     <h2>Ambos anotan</h2>
