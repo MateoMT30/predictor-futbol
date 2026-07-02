@@ -112,9 +112,12 @@ MODERN_CSS = """
   .mr-team { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 500; }
   .mr-team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mr-time { font-size: 0.82rem; color: var(--accent2); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
-  /* Partidos ya jugados: no clicables, marcador en vez de hora, atenuados */
-  .match-row-v2.played { cursor: default; opacity: 0.72; }
-  .match-row-v2.played:hover { border-color: var(--card-border); transform: none; background: var(--card); }
+  /* Partidos ya jugados: atenuados, marcador en vez de hora. Cuando son
+     <a> (predicción retroactiva) sí reaccionan al hover como clicables. */
+  .match-row-v2.played { opacity: 0.72; }
+  div.match-row-v2.played { cursor: default; }
+  div.match-row-v2.played:hover { border-color: var(--card-border); transform: none; background: var(--card); }
+  a.match-row-v2.played:hover { opacity: 1; border-color: var(--accent2); }
   .mr-score { color: var(--text); font-size: 0.95rem; font-weight: 800; }
   /* Selector "predecir cualquier enfrentamiento" */
   .picker-card {

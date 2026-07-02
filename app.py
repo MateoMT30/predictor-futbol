@@ -153,7 +153,9 @@ MATCHES_BODY = """
   <div class="day-header"{% if grupo.ancla_hoy %} id="hoy"{% endif %}>{{ grupo.dia }}</div>
   {% for m in grupo.partidos %}
   {% if m.finalizado %}
-  <div class="match-row-v2 played">
+  {# Partido jugado: clic -> predicción RETROACTIVA (qué habría dicho el
+     modelo antes del partido, sin conocer el resultado), para comparar. #}
+  <a class="match-row-v2 played" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante, antes_de=m.fecha_iso) }}">
     <div class="mr-teams">
       <div class="mr-team">
         {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
@@ -165,7 +167,7 @@ MATCHES_BODY = """
       </div>
     </div>
     <div class="mr-time mr-score">{{ m.marcador }}</div>
-  </div>
+  </a>
   {% else %}
   <a class="match-row-v2" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
     <div class="mr-teams">
@@ -391,6 +393,9 @@ def partidos():
             # Partidos ya jugados: se muestra el marcador y no son clicables
             # para predecir (predecir un partido terminado no tiene sentido).
             "finalizado": bool(getattr(row, "finalizado", False)),
+            # Fecha (solo día) del partido, para la predicción retroactiva:
+            # /predecir?antes_de=YYYY-MM-DD recorta el histórico a lo anterior.
+            "fecha_iso": row.fecha_hora.strftime("%Y-%m-%d"),
             "marcador": (
                 f"{int(row.goles_local)} - {int(row.goles_visitante)}"
                 if getattr(row, "finalizado", False) and row.goles_local is not None
@@ -610,6 +615,40 @@ def predecir():
     if matches_df.empty:
         return "No hay histórico suficiente para esta competición todavía.", 404
 
+    # Predicción RETROACTIVA (clic en un partido ya jugado): se recorta el
+    # histórico a lo estrictamente anterior a la fecha del partido, para
+    # reproducir exactamente lo que el modelo habría dicho ANTES del pitazo
+    # — sin fuga de información del resultado (misma disciplina que el
+    # backtest de src/backtest.py, pero para un partido puntual a demanda).
+    avisos = []
+    antes_de = request.args.get("antes_de", "").strip()
+    if antes_de:
+        try:
+            corte = pd.Timestamp(antes_de)
+        except Exception:
+            return "Parámetro antes_de inválido (formato esperado: YYYY-MM-DD).", 400
+        fechas = pd.to_datetime(matches_df["fecha"])
+        # El resultado real se rescata ANTES de recortar, solo para mostrarlo
+        # al final como comparación (no participa en ningún cálculo).
+        jugado = matches_df[
+            (fechas.dt.date == corte.date())
+            & (matches_df["equipo_local"] == local)
+            & (matches_df["equipo_visitante"] == visitante)
+        ]
+        real = None
+        if not jugado.empty:
+            r = jugado.iloc[0]
+            real = f"{int(r['goles_local'])} - {int(r['goles_visitante'])}"
+        matches_df = matches_df[fechas < corte]
+        if matches_df.empty:
+            return ("No hay histórico anterior a ese partido para hacer la "
+                    "predicción retroactiva."), 404
+        aviso_retro = (f"Predicción retroactiva: calculada solo con partidos anteriores al "
+                       f"{antes_de}, como si se hubiera consultado antes del pitazo.")
+        if real:
+            aviso_retro += f" Resultado real: {team_name_es(local)} {real} {team_name_es(visitante)}."
+        avisos.append(aviso_retro)
+
     # Historial de respaldo para equipos sin partidos en esta competición
     # (caso típico: recién ascendido — ej. un equipo nuevo en Premier League
     # no jugó ni un partido de PL el último año, así que el histórico de la
@@ -618,7 +657,6 @@ def predecir():
     # competición "hermana" (PL<->Championship, las dos cubiertas por el plan
     # gratis de la API y por football-data.co.uk) y se agrega al histórico,
     # avisando en el reporte que se usó otra liga.
-    avisos = []
     fallback_comp = FALLBACK_HISTORY.get(competition)
     if fallback_comp:
         missing = [
@@ -664,15 +702,19 @@ def predecir():
                 matches_df = enrich_with_fifa_reports(matches_df, {local, visitante})
             except Exception:
                 pass
-            try:
-                fifa_context = {
-                    "local": get_team_summary_stats(local),
-                    "visitante": get_team_summary_stats(visitante),
-                }
-                if not fifa_context["local"] and not fifa_context["visitante"]:
+            # En predicción retroactiva NO se muestra el contexto FIFA: son
+            # promedios de TODO el torneo (incluye partidos posteriores al
+            # que se está "prediciendo") y contaminaría la comparación.
+            if not antes_de:
+                try:
+                    fifa_context = {
+                        "local": get_team_summary_stats(local),
+                        "visitante": get_team_summary_stats(visitante),
+                    }
+                    if not fifa_context["local"] and not fifa_context["visitante"]:
+                        fifa_context = None
+                except Exception:
                     fifa_context = None
-            except Exception:
-                fifa_context = None
         finally:
             clear_request_budget()
     else:

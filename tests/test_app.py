@@ -169,3 +169,24 @@ def test_rendimiento_con_datos_renderiza_resumen_y_partidos():
     assert "Arsenal" in html
     assert "✅" in html and "❌" in html
     assert "Brier" in html
+
+
+def test_partido_jugado_linkea_prediccion_retroactiva(monkeypatch):
+    monkeypatch.setenv("FOOTBALL_DATA_API_KEY", "test-key")
+    fake_df = pd.DataFrame([
+        {"fecha_hora": pd.Timestamp("2026-06-28 15:00"), "liga": "Copa Mundial",
+         "equipo_local": "England", "equipo_visitante": "Congo DR",
+         "finalizado": True, "goles_local": 2, "goles_visitante": 1},
+    ])
+    mock_connector = MagicMock()
+    mock_connector.fetch_agenda.return_value = fake_df
+    mock_connector.fetch_matches.return_value = pd.DataFrame()
+    mock_connector.fetch_standings.side_effect = Exception("sin tabla")
+    mock_connector.fetch_scorers.side_effect = Exception("sin goleadores")
+    with patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
+        client = app.test_client()
+        res = client.get("/partidos?competition=WC")
+    html = res.data.decode("utf-8")
+    # El partido jugado ahora es un link a la prediccion retroactiva
+    assert "antes_de=2026-06-28" in html
+    assert 'class="match-row-v2 played" href=' in html
