@@ -320,12 +320,27 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
     # resultado más probable, el marcador exacto y los goles esperados en
     # UNA tarjeta arriba — antes eran tres tarjetas separadas que pesaban
     # visualmente igual que cualquier mercado secundario.
-    pick_label, pick_prob = max(
-        ((f"Gana {home}", p_home), ("Empate", p_draw), (f"Gana {away}", p_away)),
-        key=lambda t: t[1],
+    pick_label, pick_side, pick_prob = max(
+        ((f"Gana {home}", "local", p_home), ("Empate", "empate", p_draw), (f"Gana {away}", "visitante", p_away)),
+        key=lambda t: t[2],
     )
+
+    # Marcador destacado COHERENTE con el pronóstico: si el modelo favorece a
+    # un equipo, se muestra el marcador más probable DENTRO de sus victorias
+    # (ej. 2-1), no el argmax global de la matriz — que en partidos parejos
+    # colapsa a 1-1/0-0 y contradice visualmente el veredicto ("Gana X" al
+    # lado de "1-1"). El empate sí usa el argmax global. Se muestra siempre
+    # la probabilidad real y con etiqueta clara de qué representa, para no
+    # disfrazar un condicional de marcador absoluto.
+    mc = report.get("marcador_condicional")
     score_pill = ""
-    if mp:
+    if pick_side != "empate" and mc and mc.get("resultado") == pick_side:
+        quien = home if pick_side == "local" else away
+        score_pill = f"""
+      <div class="score-pill"><small>Marcador más probable si gana {html.escape(quien)}</small>
+        <span>{mc['local']}-{mc['visitante']}</span>
+        <small>{_pct(mc['prob_dentro_escenario'])}</small></div>"""
+    elif mp:
         score_pill = f"""
       <div class="score-pill"><small>Marcador exacto más probable</small>
         <span>{mp['local']}-{mp['visitante']}</span>
@@ -344,17 +359,17 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         top_scores_line = f"""
       <p class="muted" style="margin-top:10px;">Marcadores más probables: {items}</p>"""
 
-    # Escenario del ganador ("tendencia"): el marcador más típico DENTRO del
-    # resultado que el modelo ve más probable — menos conservador que el
-    # marcador más probable a secas, que suele ser un 1-0/1-1 tibio.
-    mc = report.get("marcador_condicional")
+    # El marcador del escenario ganador ya se muestra arriba en el score-pill
+    # (coherente con el veredicto). Aquí solo se añade una nota cuando el
+    # pronóstico es EMPATE pero igual hay un favorito leve por goles, para no
+    # perder ese matiz; en victorias no se repite para no duplicar el dato.
     conditional_line = ""
-    if mc and mc["resultado"] != "empate":
+    if pick_side == "empate" and mc and mc.get("resultado") != "empate":
         quien = home if mc["resultado"] == "local" else away
         conditional_line = f"""
-      <p class="muted">Si se impone {html.escape(quien)}, su marcador más típico es
-      <b>{mc['local']}-{mc['visitante']}</b> ({_pct(mc['prob_dentro_escenario'])} de sus victorias
-      simuladas).</p>"""
+      <p class="muted">Aunque lo más probable es el empate, si se impone alguien sería
+      {html.escape(quien)}, típicamente <b>{mc['local']}-{mc['visitante']}</b>
+      ({_pct(mc['prob_dentro_escenario'])} de sus victorias simuladas).</p>"""
     verdict_card = f"""
   <div class="card">
     <h2>Pronóstico del modelo</h2>
