@@ -6,6 +6,7 @@ rango 0-0" en tiros/tarjetas como si fuera un pronóstico).
 """
 
 import numpy as np
+import pytest
 import pandas as pd
 
 from src.main import build_report, load_config
@@ -119,3 +120,15 @@ def test_forma_none_si_equipo_sin_partidos():
     df = _history_with_stats()
     report = _report_for("A", "Recien Ascendido FC", df)
     assert report["forma"]["visitante"] is None
+
+
+def test_clasificacion_eliminatoria_reparte_el_empate_por_fuerza():
+    df = _history_with_stats()
+    report = _report_for("A", "C", df)
+    cl = report["clasificacion_eliminatoria"]
+    x = report["1x2"]
+    # Suma 1 (el empate quedó repartido) y respeta el orden de fuerzas
+    assert cl["local"] + cl["visitante"] == pytest.approx(1.0, abs=0.001)
+    assert cl["local"] >= x["local"] and cl["visitante"] >= x["visitante"]
+    if x["local"] > x["visitante"]:
+        assert cl["local"] > cl["visitante"]

@@ -94,3 +94,15 @@ def test_render_html_report_shows_avisos_banner():
     html_doc = render_html_report(report, [])
     assert "Avisos sobre los datos" in html_doc
     assert "Equipo X no tiene partidos" in html_doc
+
+
+def test_tarjeta_quien_clasifica_solo_en_eliminatorias():
+    report = _fake_report()
+    report["clasificacion_eliminatoria"] = {"local": 0.55, "visitante": 0.45}
+    # Sin la marca, no aparece (ligas)
+    assert "¿Quién clasifica?" not in render_html_report(report, [])
+    # Con la marca, aparece (torneos)
+    report["es_eliminatoria"] = True
+    html_doc = render_html_report(report, [])
+    assert "¿Quién clasifica?" in html_doc
+    assert "alargue y penales" in html_doc

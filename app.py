@@ -96,6 +96,9 @@ FALLBACK_HISTORY = {
 # controla el decaimiento temporal que ya tiene el modelo: con xi=0.0018,
 # un partido de hace 1 año pesa ~50% y uno de hace 2 años ~27% — lo
 # reciente sigue mandando. La ventana solo se amplía si hace falta.
+# Torneos (vs ligas): agenda con torneo completo hacia atrás, sección de
+# clasificatorias, y tarjeta "¿Quién clasifica?" en el reporte.
+TOURNAMENTS = {"WC", "EC", "CL", "CLI"}
 NATIONAL_TEAM_COMPETITIONS = {"WC", "EC"}  # torneos de selecciones
 MIN_MUESTRA_EQUIPO = 10          # partidos mínimos deseados por equipo
 VENTANAS_AMPLIADAS = (730, 1095)  # 2 años, luego 3, hasta lograr la muestra
@@ -523,7 +526,6 @@ def partidos():
     # repasar los marcadores de grupos aunque ya se esté en eliminatorias.
     # En ligas se mantienen 7 días — mostrar mes y medio de jornadas viejas
     # sería puro ruido para llegar a "Hoy".
-    TOURNAMENTS = {"WC", "EC", "CL", "CLI"}
     dias_pasados = 45 if competition in TOURNAMENTS else 7
     try:
         agenda = connector.fetch_agenda(liga=competition, dias_pasados=dias_pasados)
@@ -703,9 +705,13 @@ def partidos():
 
 
 def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adjustment=0.0,
-                    fifa_context=None, avisos=None):
+                    fifa_context=None, avisos=None, es_eliminatoria=False):
     """Lógica compartida por el flujo de API y el modo manual: ajusta los
-    modelos sobre el histórico ya cargado y arma el reporte HTML."""
+    modelos sobre el histórico ya cargado y arma el reporte HTML.
+
+    es_eliminatoria: True para torneos (Mundial/Euro/Champions/Libertadores):
+    muestra la tarjeta "¿Quién clasifica?" que traduce el 1X2 de 90 minutos
+    a probabilidad de pasar de ronda (en muerte súbita no existe el empate)."""
     config = load_config(str(PROJECT_ROOT / "config.yaml"))
 
     ratings_cfg = RatingsConfig(
@@ -754,6 +760,7 @@ def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adju
     report["escudo_local"] = _find_crest(matches_df, local)
     report["escudo_visitante"] = _find_crest(matches_df, visitante)
     report["fifa_context"] = fifa_context
+    report["es_eliminatoria"] = es_eliminatoria
     return render_html_report(report, value_bets=None)
 
 
@@ -925,7 +932,8 @@ def predecir():
         except Exception:
             pass
 
-    return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context, avisos=avisos)
+    return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context, avisos=avisos,
+                           es_eliminatoria=competition in TOURNAMENTS)
 
 
 @app.route("/rendimiento", methods=["GET"])

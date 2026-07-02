@@ -400,12 +400,30 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
       El modelo ya pondera más lo reciente — esta tarjeta lo hace visible.</p>
     </div>"""
 
+    # ¿Quién clasifica? Solo en torneos (app.py marca es_eliminatoria): el
+    # 1X2 modela los 90 minutos; en muerte súbita el empate = alargue/penales
+    # y lo que importa es quién pasa de ronda.
+    clasif = report.get("clasificacion_eliminatoria")
+    clasif_card = ""
+    if clasif and report.get("es_eliminatoria"):
+        clasif_card = f"""
+    <div class="card">
+      <h2>¿Quién clasifica? (eliminación directa)</h2>
+      {_bar(home, clasif["local"], "#6366f1")}
+      {_bar(away, clasif["visitante"], "#ef4444")}
+      <p class="muted">El pronóstico de arriba es a 90 minutos (por eso existe el "empate"):
+      si el partido es de eliminación directa, ese empate significa alargue y penales. Aquí esa
+      probabilidad se reparte según la fuerza relativa de los equipos para responder la pregunta
+      que importa: quién pasa de ronda.</p>
+    </div>"""
+
     body = f"""
   {match_header}
   <div class="subtitle" style="text-align:center;">Generado el {generated_at} · predictor-futbol</div>
   {avisos_banner}
   {ajuste_banner}
   {verdict_card}
+  {clasif_card}
   {forma_card}
 
   <div class="card">

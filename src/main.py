@@ -209,8 +209,22 @@ def build_report(
                     f"pronóstico con muestra muy chica, tómalo con pinzas."
                 )
 
+    # Probabilidad de CLASIFICAR en eliminación directa: el 1X2 modela los
+    # 90 minutos (igual que las casas de apuestas), pero en muerte súbita el
+    # "empate" significa alargue/penales. Se traduce repartiendo la
+    # probabilidad del empate proporcional a la fuerza relativa sin empate
+    # (P(local)/(P(local)+P(visitante))): el alargue lo sigue jugando el
+    # más fuerte, aunque con más azar — un reparto 50/50 ignoraría la
+    # diferencia de nivel y uno 100/0 la exageraría. La tarjeta solo se
+    # muestra en torneos (report["es_eliminatoria"], lo marca app.py).
+    p_l, p_e, p_v = (goals_report["1x2"]["local"], goals_report["1x2"]["empate"],
+                     goals_report["1x2"]["visitante"])
+    rel = p_l / (p_l + p_v) if (p_l + p_v) > 0 else 0.5
+    clasificacion = {"local": p_l + p_e * rel, "visitante": p_v + p_e * (1 - rel)}
+
     report = {
         "avisos": avisos,
+        "clasificacion_eliminatoria": clasificacion,
         "partido": {"local": home, "visitante": away},
         "1x2": goals_report["1x2"],
         "handicap": goals_report["handicap"],
