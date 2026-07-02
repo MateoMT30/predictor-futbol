@@ -116,6 +116,26 @@ MODERN_CSS = """
   .match-row-v2.played { cursor: default; opacity: 0.72; }
   .match-row-v2.played:hover { border-color: var(--card-border); transform: none; background: var(--card); }
   .mr-score { color: var(--text); font-size: 0.95rem; font-weight: 800; }
+  /* Selector "predecir cualquier enfrentamiento" */
+  .picker-card {
+    background: var(--card); border: 1px solid var(--card-border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: 14px; padding: 14px; margin: 10px 0 18px;
+  }
+  .picker-title { font-size: 0.82rem; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .picker-row { display: flex; align-items: center; gap: 8px; }
+  .picker-row select {
+    flex: 1; min-width: 0; background: rgba(15,23,42,0.7); color: var(--text);
+    border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 8px;
+    font-size: 0.85rem; font-family: inherit;
+  }
+  .picker-vs { color: var(--muted); font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+  .picker-card button {
+    width: 100%; margin-top: 12px; background: var(--accent); color: #fff; border: none;
+    border-radius: 10px; padding: 12px; font-size: 0.9rem; font-weight: 700; cursor: pointer;
+    font-family: inherit;
+  }
+  .picker-card button:active { transform: scale(0.99); }
   /* Botón flotante "Hoy" (estilo apps deportivas) */
   .today-fab {
     position: fixed; right: 16px; bottom: 18px; z-index: 50;

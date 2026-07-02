@@ -65,7 +65,7 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
 | Resultados, próximos partidos, 1X2, goles | **football-data.org** (API gratis, `FOOTBALL_DATA_API_KEY`) | ✅ Funcionando |
 | Tabla de posiciones, goleadores | football-data.org | ✅ Funcionando (solo informativo) |
 | Córners, tiros, tiros al arco, xG, posesión, pases, tiros libres, penales (Mundial) | **Reportes oficiales PDF de FIFA** (`src/connectors/fifa_reports_connector.py`) | ✅ Funcionando vía **cache JSON precomputado** (ver abajo), solo Mundial (`WC`) |
-| Córners, tiros al arco, tarjetas (ligas de clubes europeas) | **football-data.co.uk** (CSV gratis, `src/connectors/football_couk_connector.py`) | ✅ Funcionando para PL, ELC, PD, SA, BL1, FL1, DED, PPL — cruza por fecha+marcador |
+| Córners, tiros al arco, tarjetas (ligas de clubes europeas) | **football-data.co.uk** (CSV gratis, `src/connectors/football_couk_connector.py`) | ✅ Funcionando para PL, ELC, PD, SA, BL1, FL1, DED, PPL — cruza por fecha+marcador. NO cubre Brasileirão ni Libertadores (el archivo de Brasil de co.uk no trae córners/tiros) ni Champions/Euro |
 | Tarjetas amarillas/rojas | ✅ Ligas europeas: football-data.co.uk. Mundial: sin fuente (los PMSR no las traen) | Parcial |
 | Cuotas de casas de apuestas | Ninguna API gratis las da | ❌ Descartado — función sigue en el CLI (`--cuotas`) pero no en la web |
 
@@ -233,6 +233,16 @@ sección de fuentes: no hay fuente gratuita de esos datos para clubes).
   ancla a `#hoy` (grupo de hoy, o el primer día no jugado si hoy no hay), y
   un script hace scroll a hoy al cargar (los pasados quedan arriba).
   `fetch_upcoming` se conserva (compat/tests) pero la web usa `fetch_agenda`.
+  `fetch_agenda` además de la ventana de fechas trae los próximos programados
+  sin límite de fecha (para competiciones con calendario espaciado o en
+  reanudación), deduplicando por id de partido.
+- **Selector "predecir cualquier enfrentamiento"** en la página de la
+  competición (`MATCHES_BODY`): dos dropdowns con los equipos (de la tabla de
+  posiciones) que permiten pedir un pronóstico aunque no haya partido
+  programado (útil en receso o entre rondas; usa el historial de la
+  temporada vía football-data.org + enriquecimiento co.uk/FIFA). El `value`
+  es el nombre original de la API (para cruzar el histórico), se muestra en
+  español.
 
 - **Nombres de equipo en vez de "Local/Visitante"** en las tarjetas del
   reporte (córners, tiros al arco, tarjetas, goles esperados, 1X2).

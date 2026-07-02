@@ -120,6 +120,24 @@ MATCHES_BODY = """
 <h1>Partidos</h1>
 <div class="subtitle">{{ competition_name }} — toca un partido próximo para ver el pronóstico. Sube para ver días anteriores.</div>
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if teams %}
+<form class="picker-card" method="get" action="{{ url_for('predecir') }}">
+  <div class="picker-title">Predecir cualquier enfrentamiento</div>
+  <input type="hidden" name="competition" value="{{ competition }}">
+  <div class="picker-row">
+    <select name="local" required aria-label="Equipo local">
+      <option value="" disabled selected>Local…</option>
+      {% for t in teams %}<option value="{{ t.name }}">{{ t.name_es }}</option>{% endfor %}
+    </select>
+    <span class="picker-vs">vs</span>
+    <select name="visitante" required aria-label="Equipo visitante">
+      <option value="" disabled selected>Visitante…</option>
+      {% for t in teams %}<option value="{{ t.name }}">{{ t.name_es }}</option>{% endfor %}
+    </select>
+  </div>
+  <button type="submit">Ver pronóstico →</button>
+</form>
+{% endif %}
 {% if grouped_matches %}
   {% for grupo in grouped_matches %}
   <div class="day-header"{% if grupo.ancla_hoy %} id="hoy"{% endif %}>{{ grupo.dia }}</div>
@@ -342,9 +360,26 @@ def partidos():
     except Exception:
         pass
 
+    # Lista de equipos (de la tabla de posiciones) para el selector "predecir
+    # cualquier enfrentamiento": permite pedir un pronóstico aunque no haya
+    # partido programado (útil en receso o entre rondas), usando el historial
+    # de la temporada. El value es el nombre original de la API (el que cruza
+    # contra el histórico); se muestra el nombre en español.
+    teams_picker = []
+    if standings:
+        seen = set()
+        for grupo in standings:
+            for row in grupo["table"]:
+                name = row.get("team", {}).get("name")
+                if name and name not in seen:
+                    seen.add(name)
+                    teams_picker.append({"name": name, "name_es": row.get("team_es", name)})
+        teams_picker.sort(key=lambda t: t["name_es"])
+
     body = render_template_string(
         MATCHES_BODY, competition=competition, competition_name=competition_name,
-        grouped_matches=grouped_matches, standings=standings, scorers=scorers, error=None,
+        grouped_matches=grouped_matches, standings=standings, scorers=scorers,
+        teams=teams_picker, error=None,
     )
     return wrap_page(competition_name, body)
 
