@@ -64,13 +64,17 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
 |---|---|---|
 | Resultados, próximos partidos, 1X2, goles | **football-data.org** (API gratis, `FOOTBALL_DATA_API_KEY`) | ✅ Funcionando |
 | Tabla de posiciones, goleadores | football-data.org | ✅ Funcionando (solo informativo) |
-| Córners, tiros, tiros al arco, xG, posesión, pases, tiros libres, penales | **Reportes oficiales PDF de FIFA** (`src/connectors/fifa_reports_connector.py`) | ✅ Funcionando vía **cache JSON precomputado** (ver abajo), solo Mundial (`WC`) |
-| Tarjetas amarillas/rojas | Ninguna fuente gratuita encontrada | ❌ Sin resolver — solo vía CSV manual |
+| Córners, tiros, tiros al arco, xG, posesión, pases, tiros libres, penales (Mundial) | **Reportes oficiales PDF de FIFA** (`src/connectors/fifa_reports_connector.py`) | ✅ Funcionando vía **cache JSON precomputado** (ver abajo), solo Mundial (`WC`) |
+| Córners, tiros al arco, tarjetas (ligas de clubes europeas) | **football-data.co.uk** (CSV gratis, `src/connectors/football_couk_connector.py`) | ✅ Funcionando para PL, ELC, PD, SA, BL1, FL1, DED, PPL — cruza por fecha+marcador |
+| Tarjetas amarillas/rojas | ✅ Ligas europeas: football-data.co.uk. Mundial: sin fuente (los PMSR no las traen) | Parcial |
 | Cuotas de casas de apuestas | Ninguna API gratis las da | ❌ Descartado — función sigue en el CLI (`--cuotas`) pero no en la web |
 
 **Investigado y descartado** (no perder tiempo revisando de nuevo):
 - API-Football: stats (córners/tiros) requieren add-on de pago (~€15-29/mes)
-- football-data.co.uk: sitio caído + solo ligas de clubes, no Mundial
+- football-data.co.uk: NO se descartó (corrección de nota vieja). Sí sirve
+  para ligas de clubes europeas (córners/tiros/tarjetas en CSV gratis) y ya
+  está integrado (`football_couk_connector.py`). No tiene el Mundial — para
+  eso siguen los PDFs de FIFA.
 - FBref: tiene los datos pero su ToS prohíbe explícitamente construir una
   herramienta con datos scrapeados sin permiso
 - WC2026API: sin cupo disponible en plan free

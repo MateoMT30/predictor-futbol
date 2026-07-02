@@ -56,6 +56,7 @@ from src.connectors.fifa_reports_connector import (
     get_team_summary_stats,
     start_request_budget,
 )
+from src.connectors.football_couk_connector import enrich_with_couk_stats
 from src.data_loader import load_from_connector
 from src.ratings import EloRatingSystem, RatingsConfig
 from src.models.goles import DixonColesModel, GoalsModelConfig
@@ -473,6 +474,15 @@ def predecir():
                 fifa_context = None
         finally:
             clear_request_budget()
+    else:
+        # Ligas de clubes: córners, tiros al arco y tarjetas desde los CSV
+        # gratuitos de football-data.co.uk (la API .org no los trae). Solo
+        # aplica a las ligas que esa fuente cubre; para el resto no hace nada.
+        # Es liviano (CSV, no PDF) y nunca rompe la predicción.
+        try:
+            matches_df = enrich_with_couk_stats(matches_df, competition)
+        except Exception:
+            pass
 
     return _run_prediction(matches_df, local, visitante, fifa_context=fifa_context)
 
