@@ -65,22 +65,23 @@ class GoalsModelConfig:
     # torneos que recién empiezan (ej. un Mundial con muchos equipos que
     # apenas jugaron 3-4 partidos) pueden dar goles esperados absurdos —
     # se observaron casos reales de 8.76 e incluso 24.5 goles esperados
-    # en un partido antes de este ajuste. El valor 1.5 se calibró
-    # empíricamente contra el histórico real del Mundial 2026: mantiene
-    # el máximo observado en ~6 goles esperados (Alemania, tras un 7-1
-    # real, contra el rival más débil del torneo) sin aplanar partidos
-    # normales (ej. Argentina vs un rival débil sigue dando ventaja clara).
-    regularization: float = 0.7
+    # en un partido antes de este ajuste. Originalmente en 1.5, pero se
+    # recalibró a 0.5 por barrido en backtest (ver max_expected_goals): 1.5
+    # aplanaba de más los goles del favorito (todo tendía a 1-0). El control
+    # de la cola absurda se delega ahora al tope duro de abajo, no a la
+    # regularización — por eso se puede bajar sin reintroducir los 24 goles.
+    regularization: float = 0.5
     # Tope duro de goles esperados por equipo. Desacopla dos cosas que la
     # regularización mezclaba: "calibrar bien los partidos normales" y "no
-    # predecir marcadores absurdos". Bajar la regularización a 0.7 mejora la
+    # predecir marcadores absurdos". Bajar la regularización a 0.5 mejora la
     # calibración y el acierto de marcador en partidos reales (backtest: Brier
-    # 0.52->0.50, marcador exacto 13.6%->18.2%, y 5/10 exactos a 90' en los
-    # 16avos del Mundial 2026, superando al informe de referencia), pero
-    # agranda la cola: un favoritón vs un minnow con poca muestra (Germany vs
-    # Bahamas/American Samoa) podía dar 15-30 goles esperados. El tope solo
-    # muerde en esa cola patológica — los partidos reales rondan 1.5-2.7 xG,
-    # muy por debajo de 4.5 — así que no toca ninguna predicción sensata.
+    # 0.52->0.49, marcador exacto 13.6%->22.7%, acierto 1X2 56.8%->59.1%, y
+    # 5/10 exactos a 90' en los 16avos del Mundial 2026, superando al informe
+    # de referencia que sacó 4/10), pero agranda la cola: un favoritón vs un
+    # minnow con poca muestra (Germany vs Bahamas/American Samoa) podía dar
+    # 15-30 goles esperados. El tope solo muerde en esa cola patológica — los
+    # partidos reales rondan 1.5-2.7 xG, muy por debajo de 4.5 — así que no
+    # toca ninguna predicción sensata.
     max_expected_goals: float = 4.5
 
 
