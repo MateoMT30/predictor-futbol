@@ -67,6 +67,7 @@ Modo avanzado (sin API, para pruebas): formulario manual en `/` que usa
 | Córners, tiros, tiros al arco, xG, posesión, pases, tiros libres, penales (Mundial) | **Reportes oficiales PDF de FIFA** (`src/connectors/fifa_reports_connector.py`) | ✅ Funcionando vía **cache JSON precomputado** (ver abajo), solo Mundial (`WC`) |
 | Córners, tiros al arco, tarjetas (ligas de clubes europeas) | **football-data.co.uk** (CSV gratis, `src/connectors/football_couk_connector.py`) | ✅ Funcionando para PL, ELC, PD, SA, BL1, FL1, DED, PPL — cruza por fecha+marcador. NO cubre Brasileirão ni Libertadores (el archivo de Brasil de co.uk no trae córners/tiros) ni Champions/Euro |
 | Tarjetas amarillas/rojas | ✅ Ligas europeas: football-data.co.uk. Mundial: sin fuente (los PMSR no las traen) | Parcial |
+| Clasificatorias y amistosos de SELECCIONES (goles) | **github.com/martj42/international_results** (CSV público CC0, actualizado tras cada fecha FIFA; `src/connectors/international_results_connector.py`) | ✅ Funcionando — la API .org solo trae el torneo en sí (España llegaba con 3 partidos de muestra); este dataset le da ~40 en 3 años. Solo goles, que es lo que consumen Dixon-Coles/Elo. Cruce de nombres por normalización (token-sort) |
 | Cuotas de casas de apuestas | Ninguna API gratis las da | ❌ Descartado — función sigue en el CLI (`--cuotas`) pero no en la web |
 
 **Investigado y descartado** (no perder tiempo revisando de nuevo):
@@ -345,8 +346,14 @@ GitHub, no es "Direct Upload").
 Pedido del usuario al ver "Spain tiene solo 3 partidos": ampliar muestra SIN
 que el pasado viejo distorsione (cambio de plantilla, decadencia). Solución
 en app.py (`_ensure_min_sample` + `_prune_to_neighborhood`):
-- Si un equipo tiene < `MIN_MUESTRA_EQUIPO` (10) partidos en 365 días, se
-  reintenta con 2 y luego 3 años (`VENTANAS_AMPLIADAS`).
+- Si un equipo tiene < `MIN_MUESTRA_EQUIPO` (10) partidos en 365 días:
+  - SELECCIONES (WC/EC): la muestra se completa PRIMERO con el dataset
+    público de resultados internacionales (ver tabla de fuentes) — ampliar
+    la ventana contra la API .org NO sirve para selecciones porque el plan
+    gratis solo trae el torneo en sí (hallazgo del usuario: "es por donde
+    sacas los datos").
+  - Clubes: se reintenta la misma API con 2 y luego 3 años
+    (`VENTANAS_AMPLIADAS`).
 - El sesgo de historial viejo lo controla el decaimiento temporal que YA
   tenía el modelo (xi=0.0018 → 1 año pesa ~50%, 2 años ~27%); el aviso del
   reporte se lo explica al usuario.

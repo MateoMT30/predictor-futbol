@@ -58,6 +58,10 @@ from src.connectors.fifa_reports_connector import (
     start_request_budget,
 )
 from src.connectors.football_couk_connector import enrich_with_couk_stats
+from src.connectors.international_results_connector import (
+    align_team_names,
+    fetch_international_results,
+)
 from src.data_loader import load_from_connector
 from src.ratings import EloRatingSystem, RatingsConfig
 from src.models.goles import DixonColesModel, GoalsModelConfig
@@ -92,6 +96,7 @@ FALLBACK_HISTORY = {
 # controla el decaimiento temporal que ya tiene el modelo: con xi=0.0018,
 # un partido de hace 1 año pesa ~50% y uno de hace 2 años ~27% — lo
 # reciente sigue mandando. La ventana solo se amplía si hace falta.
+NATIONAL_TEAM_COMPETITIONS = {"WC", "EC"}  # torneos de selecciones
 MIN_MUESTRA_EQUIPO = 10          # partidos mínimos deseados por equipo
 VENTANAS_AMPLIADAS = (730, 1095)  # 2 años, luego 3, hasta lograr la muestra
 MAX_EQUIPOS_MODELO = 150          # tope de equipos en el ajuste (memoria: ver
@@ -128,6 +133,54 @@ def _ensure_min_sample(connector, competition, matches_df, local, visitante, has
         return matches_df
 
     hoy = datetime.now(timezone.utc)
+
+    # SELECCIONES (Mundial/Eurocopa): la API .org solo trae los partidos del
+    # torneo en sí — las clasificatorias y amistosos NO están en el plan
+    # gratis, así que ampliar la ventana contra la misma API no consigue
+    # nada (verificado: España seguía con 3 partidos). La muestra real está
+    # en el dataset público de resultados internacionales.
+    if competition in NATIONAL_TEAM_COMPETITIONS:
+        try:
+            intl = fetch_international_results(desde=hoy - timedelta(days=1095))
+        except Exception:
+            intl = None
+        if intl is not None and not intl.empty:
+            equipos_org = (set(matches_df["equipo_local"]) | set(matches_df["equipo_visitante"])
+                           | {local, visitante})
+            intl = align_team_names(intl, equipos_org)
+            # Vecindario de 1 salto: los 2 equipos, sus rivales, y los
+            # partidos entre esos rivales (red de comparación conectada sin
+            # traerse todas las confederaciones del planeta).
+            intl = _prune_to_neighborhood(intl, {local, visitante}, hops=1)
+            # Dedupe contra lo que ya vino de la API (el torneo en curso
+            # aparece en ambas fuentes): fecha + par de equipos.
+            ya = set(zip(pd.to_datetime(matches_df["fecha"]).dt.date,
+                         matches_df["equipo_local"], matches_df["equipo_visitante"]))
+            intl = intl[[
+                (f.date(), h, a) not in ya
+                for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"])
+            ]]
+            if not intl.empty and any(
+                _team_match_count(intl, t) > 0 for t in faltantes
+            ):
+                matches_df = pd.concat([matches_df, intl], ignore_index=True)
+                # Las dos fuentes pueden traer la fecha con tipos distintos
+                # (string vs datetime); se unifica antes de ordenar.
+                matches_df["fecha"] = pd.to_datetime(matches_df["fecha"])
+                matches_df = matches_df.sort_values("fecha").reset_index(drop=True)
+                equipos_es = " y ".join(team_name_es(t) for t in faltantes)
+                avisos.append(
+                    f"Muestra ampliada: la API del torneo solo trae los partidos del torneo en sí, "
+                    f"así que el historial de {equipos_es} se completó con sus clasificatorias y "
+                    f"amistosos de los últimos 3 años (dataset público de resultados "
+                    f"internacionales). Los partidos antiguos pesan menos en el modelo "
+                    f"(decaimiento temporal): la forma reciente sigue dominando."
+                )
+        if all(_team_match_count(matches_df, t) >= MIN_MUESTRA_EQUIPO for t in (local, visitante)):
+            return matches_df
+        faltantes = [t for t in (local, visitante)
+                     if _team_match_count(matches_df, t) < MIN_MUESTRA_EQUIPO]
+
     dias_adoptados = None
     for dias in VENTANAS_AMPLIADAS:
         try:
