@@ -1,0 +1,56 @@
+# Refresco automático del cache de datos FIFA (data/fifa_cache.json).
+#
+# Antes esto era el único paso manual del pipeline de datos: correr
+# scripts/refresh_fifa_cache.py en un PC y hacer push después de cada
+# jornada del Mundial. Este workflow lo hace solo, cada noche, en los
+# servidores de GitHub (gratis para repos públicos):
+#
+#   1. Parsea los reportes PDF oficiales de FIFA (no necesita API key,
+#      son públicos).
+#   2. Si el JSON cambió (hubo partidos nuevos), hace commit y push.
+#   3. El push dispara el redespliegue automático de Render.
+#
+# Si no hubo partidos nuevos, el JSON queda igual y no se hace commit
+# (no ensucia el historial). También se puede lanzar a mano desde la
+# pestaña Actions de GitHub ("Run workflow") justo después de una jornada.
+name: Refrescar cache FIFA
+
+on:
+  schedule:
+    # 07:00 UTC = 2:00 am Colombia: los partidos del día ya terminaron y
+    # FIFA ya publicó los reportes.
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Regenerar cache de FIFA
+        run: python scripts/refresh_fifa_cache.py
+
+      - name: Commit y push si cambió
+        run: |
+          if git diff --quiet -- data/fifa_cache.json; then
+            echo "Sin partidos nuevos: el cache no cambió, no hay nada que subir."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/fifa_cache.json
+          git commit -m "Actualizar cache de datos FIFA (automático)"
+          git push

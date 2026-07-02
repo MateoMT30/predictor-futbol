@@ -109,11 +109,13 @@ daba timeouts y OOM (ver bug #7). Por eso el parseo NO ocurre en la web:
 - En producción el conector solo LEE ese JSON (`_load_disk_cache`), instantáneo.
   Por defecto `_LIVE_PARSE=False`: nunca descarga/parsea un PDF en la web. El
   script de refresco activa `FIFA_LIVE_PARSE=1` para sí parsear.
-- **Para actualizar tras una jornada nueva**: correr `python
-  scripts/refresh_fifa_cache.py` en cualquier PC con el repo, luego
-  `git add data/fifa_cache.json && git commit && git push`. Render se
-  actualiza solo. Como un reporte de partido ya jugado no cambia, solo hay
-  que re-correrlo cuando se juegan partidos nuevos.
+- **Actualización AUTOMÁTICA**: el workflow de GitHub Actions
+  `.github/workflows/refresh-fifa-cache.yml` corre el script cada noche
+  (07:00 UTC = 2 am Colombia), y si el JSON cambió hace commit+push solo —
+  Render se redespliega con el push. No requiere el PC de nadie encendido.
+  También se puede lanzar a mano desde la pestaña Actions ("Run workflow").
+  El método manual (`python scripts/refresh_fifa_cache.py` + push) sigue
+  funcionando como respaldo.
 - El índice de links sigue cacheado en memoria 1h.
 
 ## Bugs reales encontrados y corregidos (contexto útil si algo se ve raro)
