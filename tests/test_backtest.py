@@ -60,3 +60,22 @@ def test_backtest_without_enough_history_returns_none():
 def test_backtest_only_evaluates_recent_max_matches():
     result = walk_forward_backtest(_synthetic_history(), max_matches=5, min_history=40)
     assert result["n"] <= 5
+
+
+def test_backtest_evalua_mercados_adicionales():
+    result = walk_forward_backtest(_synthetic_history(), max_matches=8, min_history=40)
+    mercados = result["mercados"]
+    for key in ("doble_1x", "doble_x2", "doble_12", "over25", "btts"):
+        m = mercados[key]
+        assert m["n"] == result["n"]
+        assert 0 <= m["aciertos"] <= m["n"]
+        assert 0.0 <= m["brier"] <= 1.0       # binario: rango [0, 1]
+        assert m["brier_azar"] == 0.25
+    # Detalle por partido trae las probabilidades de los mercados nuevos
+    p = result["partidos"][0]
+    assert 0.0 <= p["prob_over25"] <= 1.0
+    assert 0.0 <= p["prob_btts"] <= 1.0
+    assert isinstance(p["real_over25"], bool)
+    assert isinstance(p["real_btts"], bool)
+    # Consistencia doble oportunidad: 1X + prob_visitante = 1 (mismas probs)
+    assert p["prob_local"] + p["prob_empate"] + p["prob_visitante"] == pytest.approx(1.0, abs=0.01)

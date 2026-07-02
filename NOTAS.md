@@ -347,6 +347,11 @@ GitHub, no es "Direct Upload").
   SOLO los partidos estrictamente anteriores (sin leakage) y compara pick y
   probabilidades contra el resultado real. Métricas: tasa de acierto del
   pick (azar ~33%) y Brier score multiclase (0=perfecto, 0.667=uniforme).
+  Ademas evalua POR TIPO DE APUESTA: doble oportunidad (1X, X2, 12,
+  derivadas de las mismas probs 1X2), mas de 2.5 goles y ambos anotan
+  (binarios: Brier azar 0.25). La pagina /rendimiento muestra la tabla
+  comparativa - el criterio para comparar mercados es el Brier contra su
+  azar, no el % de acierto seco.
 - Corre OFFLINE (`scripts/run_backtest.py` → `data/backtest.json`), mismo
   patrón que el cache FIFA: reajustar el modelo 40 veces por competición es
   demasiado para un request de Render free. Pausa de 7s entre competiciones

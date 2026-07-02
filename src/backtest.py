@@ -33,6 +33,7 @@ para un request del plan free de Render. La web solo lee el JSON resultante.
 from datetime import datetime, timezone
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from .models.goles import DixonColesModel, GoalsModelConfig
@@ -44,6 +45,31 @@ def _actual_outcome(goles_local, goles_visitante) -> str:
     if goles_local < goles_visitante:
         return "visitante"
     return "empate"
+
+
+def _binary_market_summary(pairs) -> Optional[dict]:
+    """
+    Resumen de un mercado a dos salidas (sí/no): doble oportunidad,
+    over/under, ambos anotan. `pairs` = lista de (prob_sí, ocurrió).
+
+    Regla de decisión evaluada: "apostar al lado que el modelo ve más
+    probable" (prob >= 50% → sí, si no → no). El Brier binario usa una sola
+    probabilidad: (p - resultado)². Referencia de azar: decir siempre 50%
+    da Brier 0.25 — distinta de la del 1X2 (0.667, tres salidas), por eso
+    cada mercado guarda su propia referencia.
+    """
+    if not pairs:
+        return None
+    n = len(pairs)
+    aciertos = sum(1 for p, happened in pairs if (p >= 0.5) == happened)
+    brier = sum((p - (1.0 if happened else 0.0)) ** 2 for p, happened in pairs) / n
+    return {
+        "n": n,
+        "aciertos": aciertos,
+        "acierto_pct": round(aciertos / n * 100, 1),
+        "brier": round(brier, 4),
+        "brier_azar": 0.25,
+    }
 
 
 def walk_forward_backtest(
@@ -83,11 +109,22 @@ def walk_forward_backtest(
             continue
         try:
             model = DixonColesModel(goals_config).fit(train)
-            probs = model.market_probabilities(row["equipo_local"], row["equipo_visitante"], 0.0, 0.0)["1x2"]
+            markets = model.market_probabilities(row["equipo_local"], row["equipo_visitante"], 0.0, 0.0)
+            matrix = model.score_matrix(row["equipo_local"], row["equipo_visitante"], 0.0, 0.0)
         except Exception:
             continue
+        probs = markets["1x2"]
 
-        real = _actual_outcome(row["goles_local"], row["goles_visitante"])
+        # Probabilidades derivadas de la MISMA matriz de marcadores (así
+        # todos los mercados evaluados son consistentes entre sí):
+        # más de 2.5 goles = suma de las celdas con 3+ goles totales.
+        max_g = matrix.shape[0]
+        total_goals = np.add.outer(np.arange(max_g), np.arange(max_g))
+        p_over25 = float(matrix[total_goals >= 3].sum())
+        p_btts = float(markets["ambos_anotan"]["si"])
+
+        gl, gv = int(row["goles_local"]), int(row["goles_visitante"])
+        real = _actual_outcome(gl, gv)
         pick = max(probs, key=probs.get)
         brier = sum((probs[k] - (1.0 if k == real else 0.0)) ** 2 for k in ("local", "empate", "visitante"))
 
@@ -95,7 +132,7 @@ def walk_forward_backtest(
             "fecha": row["fecha"].strftime("%Y-%m-%d"),
             "local": row["equipo_local"],
             "visitante": row["equipo_visitante"],
-            "marcador": f"{int(row['goles_local'])} - {int(row['goles_visitante'])}",
+            "marcador": f"{gl} - {gv}",
             "prob_local": round(probs["local"], 4),
             "prob_empate": round(probs["empate"], 4),
             "prob_visitante": round(probs["visitante"], 4),
@@ -104,6 +141,11 @@ def walk_forward_backtest(
             "real": real,
             "acierto": pick == real,
             "brier": round(brier, 4),
+            # Mercados adicionales (probabilidad del "sí" y qué pasó):
+            "prob_over25": round(p_over25, 4),
+            "real_over25": (gl + gv) > 2.5,
+            "prob_btts": round(p_btts, 4),
+            "real_btts": gl > 0 and gv > 0,
         })
 
     if not partidos:
@@ -111,9 +153,33 @@ def walk_forward_backtest(
 
     n = len(partidos)
     aciertos = sum(1 for p in partidos if p["acierto"])
+
+    # Rendimiento POR TIPO DE APUESTA (pedido del usuario: "si quiero
+    # apostar gana/empata eso cambia, ¿no?"). La doble oportunidad se
+    # deriva de las mismas probabilidades 1X2 (1X = local + empate, etc.),
+    # así que no requiere re-evaluar nada — solo re-agregar.
+    mercados = {
+        "doble_1x": _binary_market_summary([
+            (p["prob_local"] + p["prob_empate"], p["real"] in ("local", "empate")) for p in partidos
+        ]),
+        "doble_x2": _binary_market_summary([
+            (p["prob_empate"] + p["prob_visitante"], p["real"] in ("empate", "visitante")) for p in partidos
+        ]),
+        "doble_12": _binary_market_summary([
+            (p["prob_local"] + p["prob_visitante"], p["real"] in ("local", "visitante")) for p in partidos
+        ]),
+        "over25": _binary_market_summary([
+            (p["prob_over25"], p["real_over25"]) for p in partidos
+        ]),
+        "btts": _binary_market_summary([
+            (p["prob_btts"], p["real_btts"]) for p in partidos
+        ]),
+    }
+
     # Más reciente primero para mostrar (se evaluó en orden cronológico).
     partidos.reverse()
     return {
+        "mercados": mercados,
         "generado_en": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "n": n,
         "aciertos": aciertos,

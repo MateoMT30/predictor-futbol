@@ -295,6 +295,32 @@ fecha (sin hacer trampa mirando el futuro), igual que si hubieras consultado la 
   </p>
 </div>
 
+{% if mercados_rows %}
+<div class="card">
+  <h2>Acierto por tipo de apuesta</h2>
+  <table>
+    <thead><tr><th>Apuesta</th><th>Acierto</th><th>Brier</th><th>Azar</th></tr></thead>
+    <tbody>
+      {% for m in mercados_rows %}
+      <tr>
+        <td>{{ m.nombre }}</td>
+        <td><b>{{ m.aciertos }}/{{ m.n }}</b> ({{ m.acierto_pct }}%)</td>
+        <td {% if m.brier < m.brier_azar %}style="color:var(--green);font-weight:700;"{% endif %}>{{ m.brier }}</td>
+        <td class="muted">{{ m.brier_azar }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:10px;">
+    "Acierto" = el lado que el modelo veía más probable fue el que ocurrió. Ojo con la doble
+    oportunidad: acierta mucho más seguido, pero las casas también la pagan mucho menos — el
+    número que de verdad compara mercados es el <b>Brier contra su azar</b> (dos salidas = 0.25,
+    tres salidas = 0.667; en verde cuando el modelo le gana al azar). Donde el Brier del modelo
+    más se aleja del azar, más confiable es su probabilidad para ese tipo de apuesta.
+  </p>
+</div>
+{% endif %}
+
 {% for p in bt.partidos %}
 <div class="card" style="padding:12px 16px;">
   <div style="display:flex; align-items:center; gap:10px;">
@@ -757,8 +783,31 @@ def rendimiento():
          "pick_es": pick_es.get(p["pick"], p["pick"])}
         for p in bt["partidos"]
     ]
+    # Tabla "acierto por tipo de apuesta": el 1X2 (tres salidas) primero y
+    # luego los mercados binarios. JSONs viejos sin "mercados" simplemente
+    # no muestran la tabla (el nightly la agrega al siguiente refresco).
+    nombres = {
+        "doble_1x": "Doble oportunidad 1X (local o empate)",
+        "doble_x2": "Doble oportunidad X2 (empate o visitante)",
+        "doble_12": "Doble oportunidad 12 (no empate)",
+        "over25": "Más de 2.5 goles",
+        "btts": "Ambos anotan",
+    }
+    mercados_rows = [{
+        "nombre": "1X2 (gana/empata/pierde)",
+        "n": bt["n"], "aciertos": bt["aciertos"], "acierto_pct": bt["acierto_pct"],
+        "brier": bt["brier"], "brier_azar": bt["brier_azar"],
+    }]
+    for key, nombre in nombres.items():
+        m = (bt.get("mercados") or {}).get(key)
+        if m:
+            mercados_rows.append({"nombre": nombre, **m})
+    if len(mercados_rows) == 1:
+        mercados_rows = None  # JSON viejo: solo 1X2, la tabla no aporta nada
+
     body = render_template_string(
         RENDIMIENTO_BODY, competition=competition, competition_name=competition_name, bt=bt,
+        mercados_rows=mercados_rows,
     )
     return wrap_page(f"Rendimiento — {competition_name}", body)
 
