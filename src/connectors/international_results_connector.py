@@ -81,7 +81,16 @@ def fetch_international_results(desde) -> Optional[pd.DataFrame]:
         "goles_visitante": pd.to_numeric(raw["away_score"], errors="coerce"),
     })
     df = df.dropna(subset=["fecha", "goles_local", "goles_visitante"])
-    return df[df["fecha"] >= pd.Timestamp(desde)].reset_index(drop=True)
+    # Las fechas del dataset son naive (sin zona horaria); si `desde` viene
+    # tz-aware (ej. datetime.now(timezone.utc), como lo pasa app.py), pandas
+    # se niega a compararlas y lanza TypeError — que aguas arriba se tragaba
+    # un try/except y desactivaba esta fuente en silencio (bug real visto en
+    # producción: España seguía con 3 partidos tras el deploy). Se normaliza
+    # a naive antes de comparar.
+    corte = pd.Timestamp(desde)
+    if corte.tzinfo is not None:
+        corte = corte.tz_convert(None)
+    return df[df["fecha"] >= corte].reset_index(drop=True)
 
 
 def align_team_names(df: pd.DataFrame, reference_names) -> pd.DataFrame:

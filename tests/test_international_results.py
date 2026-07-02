@@ -125,3 +125,14 @@ def test_partidos_wc_llena_clasificatorias_desde_dataset_internacional(monkeypat
     assert "República Democrática del Congo" in html
     # Nota de coherencia con el modelo
     assert "parte de la muestra" in html
+
+
+def test_fetch_acepta_fecha_con_zona_horaria(monkeypatch):
+    """Regresión del bug de producción: app.py pasa datetime.now(timezone.utc)
+    (tz-aware) y el dataset trae fechas naive — la comparación lanzaba
+    TypeError que un try/except aguas arriba silenciaba, desactivando la
+    fuente entera sin que nadie lo viera."""
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(intl_mod, "_download", lambda: _fake_raw_csv_df())
+    df = fetch_international_results(desde=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    assert len(df) == 3
