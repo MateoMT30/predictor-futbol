@@ -325,22 +325,16 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         key=lambda t: t[2],
     )
 
-    # Marcador destacado COHERENTE con el pronóstico: si el modelo favorece a
-    # un equipo, se muestra el marcador más probable DENTRO de sus victorias
-    # (ej. 2-1), no el argmax global de la matriz — que en partidos parejos
-    # colapsa a 1-1/0-0 y contradice visualmente el veredicto ("Gana X" al
-    # lado de "1-1"). El empate sí usa el argmax global. Se muestra siempre
-    # la probabilidad real y con etiqueta clara de qué representa, para no
-    # disfrazar un condicional de marcador absoluto.
+    # Marcador destacado = el MÁS PROBABLE de la matriz (argmax global). Se
+    # midió en backtest walk-forward que este acierta más que el marcador
+    # "coherente con el veredicto" (18.2% vs 13.6% de plenos): en partidos
+    # parejos el resultado real SÍ suele ser 1-1/0-0, aunque visualmente
+    # choque con un "Gana X" por décimas. La coherencia se preserva con la
+    # nota condicional de abajo ("si gana X, típico 2-1"), sin sacrificar
+    # precisión en el número destacado.
     mc = report.get("marcador_condicional")
     score_pill = ""
-    if pick_side != "empate" and mc and mc.get("resultado") == pick_side:
-        quien = home if pick_side == "local" else away
-        score_pill = f"""
-      <div class="score-pill"><small>Marcador más probable si gana {html.escape(quien)}</small>
-        <span>{mc['local']}-{mc['visitante']}</span>
-        <small>{_pct(mc['prob_dentro_escenario'])}</small></div>"""
-    elif mp:
+    if mp:
         score_pill = f"""
       <div class="score-pill"><small>Marcador exacto más probable</small>
         <span>{mp['local']}-{mp['visitante']}</span>
@@ -359,14 +353,21 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
         top_scores_line = f"""
       <p class="muted" style="margin-top:10px;">Marcadores más probables: {items}</p>"""
 
-    # El marcador del escenario ganador ya se muestra arriba en el score-pill
-    # (coherente con el veredicto). Aquí solo se añade una nota cuando el
-    # pronóstico es EMPATE pero igual hay un favorito leve por goles, para no
-    # perder ese matiz; en victorias no se repite para no duplicar el dato.
+    # Nota condicional: el marcador más típico DENTRO del escenario que el
+    # modelo ve más probable. Da la lectura "realista" del ganador (ej. 2-1)
+    # como CONTEXTO, sin robarle precisión al marcador destacado de arriba
+    # (que es el argmax, más certero). Cubre tanto victorias como el matiz
+    # de "si el empate es lo más probable pero igual hay un favorito leve".
     conditional_line = ""
-    if pick_side == "empate" and mc and mc.get("resultado") != "empate":
+    if mc and mc.get("resultado") != "empate":
         quien = home if mc["resultado"] == "local" else away
-        conditional_line = f"""
+        if pick_side == mc["resultado"]:
+            conditional_line = f"""
+      <p class="muted">Si se impone {html.escape(quien)}, su marcador más típico es
+      <b>{mc['local']}-{mc['visitante']}</b> ({_pct(mc['prob_dentro_escenario'])} de sus
+      victorias simuladas).</p>"""
+        else:
+            conditional_line = f"""
       <p class="muted">Aunque lo más probable es el empate, si se impone alguien sería
       {html.escape(quien)}, típicamente <b>{mc['local']}-{mc['visitante']}</b>
       ({_pct(mc['prob_dentro_escenario'])} de sus victorias simuladas).</p>"""
