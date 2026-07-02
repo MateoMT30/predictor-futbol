@@ -93,3 +93,43 @@ def test_predecir_without_api_key_returns_500():
     client = app.test_client()
     res = client.get("/predecir?competition=PL&local=A&visitante=B")
     assert res.status_code == 500
+
+
+def test_partidos_torneo_muestra_clasificatorias(monkeypatch):
+    """En torneos (ej. WC), los partidos previos al torneo (clasificatorias)
+    aparecen en una seccion plegable agrupada por mes."""
+    monkeypatch.setenv("FOOTBALL_DATA_API_KEY", "test-key")
+    agenda_df = pd.DataFrame([
+        {"fecha_hora": pd.Timestamp("2026-06-11 18:00"), "liga": "Copa Mundial",
+         "equipo_local": "Mexico", "equipo_visitante": "South Africa",
+         "finalizado": True, "goles_local": 2, "goles_visitante": 0},
+    ])
+    hist_df = pd.DataFrame([
+        {"fecha": "2026-03-28", "liga": "Copa Mundial",
+         "equipo_local": "Colombia", "equipo_visitante": "Bolivia",
+         "escudo_local": None, "escudo_visitante": None,
+         "goles_local": 3, "goles_visitante": 0},
+        {"fecha": "2025-11-14", "liga": "Copa Mundial",
+         "equipo_local": "Italy", "equipo_visitante": "Norway",
+         "escudo_local": None, "escudo_visitante": None,
+         "goles_local": 1, "goles_visitante": 1},
+    ])
+    mock_connector = MagicMock()
+    mock_connector.fetch_agenda.return_value = agenda_df
+    mock_connector.fetch_matches.return_value = hist_df
+    mock_connector.fetch_standings.side_effect = Exception("sin tabla")
+    mock_connector.fetch_scorers.side_effect = Exception("sin goleadores")
+    with patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
+        client = app.test_client()
+        res = client.get("/partidos?competition=WC")
+    assert res.status_code == 200
+    html = res.data.decode("utf-8")
+    assert "Clasificatorias y partidos previos al torneo" in html
+    assert "Marzo 2026" in html
+    assert "Noviembre 2025" in html
+    assert "3 - 0" in html
+    # En ligas NO se pide el historico previo (seria ruido)
+    mock_connector.fetch_matches.reset_mock()
+    with patch.object(app_module, "FootballDataConnector", return_value=mock_connector):
+        client.get("/partidos?competition=PL")
+    mock_connector.fetch_matches.assert_not_called()

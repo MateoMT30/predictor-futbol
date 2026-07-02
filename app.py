@@ -195,6 +195,30 @@ MATCHES_BODY = """
   competición o vuelve más cerca de la próxima fecha.</p>
 {% endif %}
 
+{% if prev_groups %}
+<details>
+  <summary>Clasificatorias y partidos previos al torneo</summary>
+  {% for g in prev_groups %}
+  <div class="day-header">{{ g.mes }}</div>
+  {% for m in g.partidos %}
+  <div class="match-row-v2 played">
+    <div class="mr-teams">
+      <div class="mr-team">
+        {% if m.escudo_local %}<img class="crest" loading="lazy" src="{{ m.escudo_local }}" onerror="this.style.visibility='hidden'">{% endif %}
+        <span>{{ m.equipo_local_es }}</span>
+      </div>
+      <div class="mr-team">
+        {% if m.escudo_visitante %}<img class="crest" loading="lazy" src="{{ m.escudo_visitante }}" onerror="this.style.visibility='hidden'">{% endif %}
+        <span>{{ m.equipo_visitante_es }}</span>
+      </div>
+    </div>
+    <div class="mr-time mr-score">{{ m.marcador }}</div>
+  </div>
+  {% endfor %}
+  {% endfor %}
+</details>
+{% endif %}
+
 {% if standings %}
 <details>
   <summary>Tabla de posiciones</summary>
@@ -377,6 +401,45 @@ def partidos():
     except Exception:
         pass
 
+    # Clasificatorias y partidos previos al torneo (solo torneos): la agenda
+    # de arriba cubre el torneo en sí (45 días), pero la clasificación se jugó
+    # meses/años antes. Se traen los partidos FINISHED del último año que
+    # queden ANTES de la ventana de la agenda (la API agrupa torneo y su
+    # clasificación bajo el mismo código, ej. "WC"), agrupados por mes, en una
+    # sección plegable para no enterrar la agenda del torneo. Son los mismos
+    # datos que el modelo ya usa para predecir — esto solo los hace visibles.
+    prev_groups = None
+    if competition in TOURNAMENTS:
+        try:
+            now = datetime.now(timezone.utc)
+            hist = connector.fetch_matches(
+                liga=competition,
+                desde=(now - timedelta(days=365)).strftime("%Y-%m-%d"),
+                hasta=(now - timedelta(days=dias_pasados + 1)).strftime("%Y-%m-%d"),
+            )
+        except Exception:
+            hist = None
+        if hist is not None and not hist.empty:
+            meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+                        "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+            # Descendente: lo más reciente (el repechaje/última fecha) primero.
+            hist = hist.sort_values("fecha", ascending=False)
+            prev_groups = []
+            for row in hist.itertuples():
+                f = datetime.strptime(row.fecha, "%Y-%m-%d")
+                mes = f"{meses_es[f.month - 1].capitalize()} {f.year}"
+                m = {
+                    "equipo_local_es": team_name_es(row.equipo_local),
+                    "equipo_visitante_es": team_name_es(row.equipo_visitante),
+                    "escudo_local": _clean_nan(row.escudo_local),
+                    "escudo_visitante": _clean_nan(row.escudo_visitante),
+                    "marcador": f"{int(row.goles_local)} - {int(row.goles_visitante)}",
+                }
+                if prev_groups and prev_groups[-1]["mes"] == mes:
+                    prev_groups[-1]["partidos"].append(m)
+                else:
+                    prev_groups.append({"mes": mes, "partidos": [m]})
+
     # Lista de equipos (de la tabla de posiciones) para el selector "predecir
     # cualquier enfrentamiento": permite pedir un pronóstico aunque no haya
     # partido programado (útil en receso o entre rondas), usando el historial
@@ -396,7 +459,7 @@ def partidos():
     body = render_template_string(
         MATCHES_BODY, competition=competition, competition_name=competition_name,
         grouped_matches=grouped_matches, standings=standings, scorers=scorers,
-        teams=teams_picker, error=None,
+        teams=teams_picker, prev_groups=prev_groups, error=None,
     )
     return wrap_page(competition_name, body)
 
