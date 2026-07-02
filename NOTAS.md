@@ -340,6 +340,22 @@ git push
 Render redespliega automático al detectar el push (está conectado a
 GitHub, no es "Direct Upload").
 
+## Ventana de historial adaptativa (muestra chica en selecciones)
+
+Pedido del usuario al ver "Spain tiene solo 3 partidos": ampliar muestra SIN
+que el pasado viejo distorsione (cambio de plantilla, decadencia). Solución
+en app.py (`_ensure_min_sample` + `_prune_to_neighborhood`):
+- Si un equipo tiene < `MIN_MUESTRA_EQUIPO` (10) partidos en 365 días, se
+  reintenta con 2 y luego 3 años (`VENTANAS_AMPLIADAS`).
+- El sesgo de historial viejo lo controla el decaimiento temporal que YA
+  tenía el modelo (xi=0.0018 → 1 año pesa ~50%, 2 años ~27%); el aviso del
+  reporte se lo explica al usuario.
+- El riesgo de OOM (bug #2: más años = cientos de equipos = explosión de
+  parámetros de Dixon-Coles) se controla recortando al "vecindario" del
+  partido: los 2 equipos, sus rivales y los rivales de sus rivales (2
+  saltos; 1 salto si aún supera `MAX_EQUIPOS_MODELO`=150).
+- En predicción retroactiva (antes_de) NO se amplía la ventana.
+
 ## Backtest / rendimiento del modelo (pedido del usuario: "probabilidad de error")
 
 - `src/backtest.py`: walk-forward backtest del 1X2 — para cada uno de los

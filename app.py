@@ -84,6 +84,84 @@ FALLBACK_HISTORY = {
     "ELC": "PL",
 }
 
+# --- Ventana de historial adaptativa (muestra chica) -----------------------
+# Con 365 días, una selección puede llegar a un Mundial con 3 partidos en el
+# histórico ("muestra muy chica, tómalo con pinzas"). Ampliar la ventana da
+# más muestra REAL (clasificatorias/amistosos), y el sesgo de "mirar
+# históricos viejos" que preocupa (cambio de plantilla, decadencia) lo
+# controla el decaimiento temporal que ya tiene el modelo: con xi=0.0018,
+# un partido de hace 1 año pesa ~50% y uno de hace 2 años ~27% — lo
+# reciente sigue mandando. La ventana solo se amplía si hace falta.
+MIN_MUESTRA_EQUIPO = 10          # partidos mínimos deseados por equipo
+VENTANAS_AMPLIADAS = (730, 1095)  # 2 años, luego 3, hasta lograr la muestra
+MAX_EQUIPOS_MODELO = 150          # tope de equipos en el ajuste (memoria: ver
+                                  # bug #2 de NOTAS — OOM real en Render free)
+
+
+def _team_match_count(df, team):
+    return int(((df["equipo_local"] == team) | (df["equipo_visitante"] == team)).sum())
+
+
+def _prune_to_neighborhood(df, seeds, hops=2):
+    """Recorta el histórico al "vecindario" de los equipos del partido:
+    ellos, sus rivales, y los rivales de sus rivales (hops=2). Dixon-Coles
+    solo necesita una red de comparación conectada alrededor de los dos
+    equipos — un partido de una confederación lejana no aporta nada para
+    este pronóstico y sí infla el número de parámetros a optimizar (cada
+    equipo agrega 2), que fue la causa del OOM en Render free."""
+    keep = set(seeds)
+    for _ in range(hops):
+        mask = df["equipo_local"].isin(keep) | df["equipo_visitante"].isin(keep)
+        keep = keep | set(df.loc[mask, "equipo_local"]) | set(df.loc[mask, "equipo_visitante"])
+    return df[df["equipo_local"].isin(keep) & df["equipo_visitante"].isin(keep)]
+
+
+def _ensure_min_sample(connector, competition, matches_df, local, visitante, hasta, avisos):
+    """Si alguno de los dos equipos tiene menos de MIN_MUESTRA_EQUIPO
+    partidos en la ventana de 365 días, reintenta con ventanas más largas
+    (2 y 3 años) y recorta al vecindario relevante para no exceder el
+    presupuesto de memoria. Modifica avisos in-place para que el reporte
+    explique qué se hizo."""
+    faltantes = [t for t in (local, visitante)
+                 if _team_match_count(matches_df, t) < MIN_MUESTRA_EQUIPO]
+    if not faltantes:
+        return matches_df
+
+    hoy = datetime.now(timezone.utc)
+    dias_adoptados = None
+    for dias in VENTANAS_AMPLIADAS:
+        try:
+            ampliado, _ = load_from_connector(
+                connector, liga=competition,
+                desde=(hoy - timedelta(days=dias)).strftime("%Y-%m-%d"), hasta=hasta,
+            )
+        except Exception:
+            break
+        if ampliado.empty or len(ampliado) <= len(matches_df):
+            continue
+        recortado = _prune_to_neighborhood(ampliado, {local, visitante}, hops=2)
+        n_equipos = len(set(recortado["equipo_local"]) | set(recortado["equipo_visitante"]))
+        if n_equipos > MAX_EQUIPOS_MODELO:
+            recortado = _prune_to_neighborhood(ampliado, {local, visitante}, hops=1)
+        # Solo se adopta la ventana ampliada si de verdad mejora la muestra
+        # de los equipos del partido (recortada al vecindario).
+        if all(_team_match_count(recortado, t) > _team_match_count(matches_df, t) for t in faltantes):
+            matches_df = recortado.sort_values("fecha").reset_index(drop=True)
+            dias_adoptados = dias
+        if all(_team_match_count(matches_df, t) >= MIN_MUESTRA_EQUIPO for t in (local, visitante)):
+            break
+
+    if dias_adoptados:
+        equipos_es = " y ".join(team_name_es(t) for t in faltantes)
+        avisos.append(
+            f"Muestra ampliada: {equipos_es} tenía muy pocos partidos en los últimos 365 días, "
+            f"así que se usó el historial de los últimos {dias_adoptados // 365} años "
+            f"(clasificatorias y amistosos). Los partidos antiguos pesan menos en el modelo "
+            f"(decaimiento temporal), así que la forma y la plantilla recientes siguen "
+            f"dominando el pronóstico."
+        )
+    return matches_df
+
 INDEX_BODY = """
 <h1>⚽ Predictor Fútbol</h1>
 <div class="subtitle">Elige una competición para ver los próximos partidos.</div>
@@ -674,6 +752,16 @@ def predecir():
         if real:
             aviso_retro += f" Resultado real: {team_name_es(local)} {real} {team_name_es(visitante)}."
         avisos.append(aviso_retro)
+
+    # Ventana adaptativa: si alguno de los dos equipos quedó con muestra
+    # muy chica en 365 días (típico: selecciones que juegan poco), se
+    # amplía a 2-3 años recortando al vecindario relevante. En modo
+    # retroactivo NO se amplía: cambiaría la base contra la que se comparó
+    # históricamente y el corte antes_de ya define su propio universo.
+    if not antes_de:
+        matches_df = _ensure_min_sample(
+            connector, competition, matches_df, local, visitante, hasta, avisos,
+        )
 
     # Historial de respaldo para equipos sin partidos en esta competición
     # (caso típico: recién ascendido — ej. un equipo nuevo en Premier League

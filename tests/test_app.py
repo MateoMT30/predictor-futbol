@@ -190,3 +190,64 @@ def test_partido_jugado_linkea_prediccion_retroactiva(monkeypatch):
     # El partido jugado ahora es un link a la prediccion retroactiva
     assert "antes_de=2026-06-28" in html
     assert 'class="match-row-v2 played" href=' in html
+
+
+def _df_partidos(rows):
+    base = {"escudo_local": None, "escudo_visitante": None}
+    return pd.DataFrame([{**base, **r} for r in rows])
+
+
+def test_prune_to_neighborhood_conserva_vecindario_y_descarta_lejanos():
+    df = _df_partidos([
+        # España y su rival directo
+        {"fecha": "2026-06-01", "equipo_local": "Spain", "equipo_visitante": "Austria",
+         "goles_local": 1, "goles_visitante": 1},
+        # Rival del rival (2 saltos: debe conservarse)
+        {"fecha": "2026-05-01", "equipo_local": "Austria", "equipo_visitante": "France",
+         "goles_local": 0, "goles_visitante": 2},
+        # Cluster totalmente desconectado (otra confederación): debe salir
+        {"fecha": "2026-05-02", "equipo_local": "Fiji", "equipo_visitante": "Tonga",
+         "goles_local": 3, "goles_visitante": 0},
+    ])
+    result = app_module._prune_to_neighborhood(df, {"Spain", "Austria"}, hops=2)
+    equipos = set(result["equipo_local"]) | set(result["equipo_visitante"])
+    assert {"Spain", "Austria", "France"} <= equipos
+    assert "Fiji" not in equipos
+
+
+def test_ensure_min_sample_amplia_ventana_cuando_hay_pocos_partidos():
+    chico = _df_partidos([
+        {"fecha": "2026-06-20", "equipo_local": "Spain", "equipo_visitante": "Austria",
+         "goles_local": 2, "goles_visitante": 0},
+    ])
+    # Historial ampliado (2 años): más partidos de ambos equipos
+    filas = []
+    for i in range(12):
+        filas.append({"fecha": f"2025-{(i % 12) + 1:02d}-10",
+                      "equipo_local": "Spain" if i % 2 == 0 else "Austria",
+                      "equipo_visitante": "France",
+                      "goles_local": 1, "goles_visitante": 0})
+    grande = pd.concat([chico, _df_partidos(filas)], ignore_index=True)
+
+    avisos = []
+    with patch.object(app_module, "load_from_connector", return_value=(grande, None)) as loader:
+        result = app_module._ensure_min_sample(
+            MagicMock(), "WC", chico, "Spain", "Austria", "2026-07-01", avisos)
+    assert len(result) > len(chico)
+    assert app_module._team_match_count(result, "Spain") >= 6
+    assert any("Muestra ampliada" in a for a in avisos)
+    # El aviso explica el control del sesgo (decaimiento temporal)
+    assert any("decaimiento temporal" in a for a in avisos)
+
+
+def test_ensure_min_sample_no_hace_nada_si_la_muestra_alcanza():
+    filas = [{"fecha": f"2026-0{(i % 6) + 1}-15",
+              "equipo_local": "Spain" if i % 2 == 0 else "Austria",
+              "equipo_visitante": "France", "goles_local": 1, "goles_visitante": 1}
+             for i in range(24)]
+    df = _df_partidos(filas)
+    with patch.object(app_module, "load_from_connector") as loader:
+        result = app_module._ensure_min_sample(
+            MagicMock(), "WC", df, "Spain", "Austria", "2026-07-01", [])
+    loader.assert_not_called()
+    assert len(result) == len(df)
