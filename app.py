@@ -313,7 +313,7 @@ MATCHES_BODY = """
     {% if m.estado_modelo == 'exacto' %}<span class="mr-hitmark" aria-label="El modelo clavó el marcador">✓✓</span>
     {% elif m.estado_modelo == 'resultado' %}<span class="mr-hitmark result" aria-label="El modelo acertó el ganador">✓</span>
     {% elif m.estado_modelo == 'fallo' %}<span class="mr-hitmark miss" aria-label="El modelo falló">✗</span>{% endif %}
-    <div class="mr-time mr-score">{{ m.marcador }}</div>
+    <div class="mr-time mr-score">{{ m.marcador }}{% if m.tras_prorroga %}<small class="mr-aet" title="Se definió en prórroga o penales; el marcador incluye el tiempo extra. El modelo predice a 90 minutos.">TE</small>{% endif %}</div>
   </a>
   {% else %}
   <a class="match-row-v2" href="{{ url_for('predecir', competition=competition, local=m.equipo_local, visitante=m.equipo_visitante) }}">
@@ -622,6 +622,12 @@ def partidos():
                 if getattr(row, "finalizado", False) and row.goles_local is not None
                 else None
             ),
+            # El marcador de football-data incluye la prórroga; el modelo
+            # predice a 90'. Se marca cuando el partido se definió en tiempo
+            # extra/penales, para que el usuario sepa que ese marcador no es
+            # comparable 1-a-1 con la predicción (ni con "marcador exacto" de
+            # las casas, que liquida a 90').
+            "tras_prorroga": getattr(row, "duracion", None) in ("EXTRA_TIME", "PENALTY_SHOOTOUT"),
         })
 
     # La leyenda de ✓/✗ solo se muestra si al menos un partido tiene marca

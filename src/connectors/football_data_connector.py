@@ -204,11 +204,12 @@ class FootballDataConnector(DataSourceConnector):
         _FINALIZADOS = {"FINISHED", "AWARDED"}
         cols = ["fecha_hora", "liga", "equipo_local", "equipo_visitante",
                 "escudo_local", "escudo_visitante", "estado", "finalizado",
-                "goles_local", "goles_visitante"]
+                "goles_local", "goles_visitante", "duracion"]
 
         def _row(m, liga_name):
             estado = m.get("status")
-            score = m.get("score", {}).get("fullTime", {})
+            full = m.get("score", {}) or {}
+            score = full.get("fullTime", {}) or {}
             return {
                 "fecha_hora": pd.to_datetime(m["utcDate"]),
                 "liga": liga_name,
@@ -220,6 +221,12 @@ class FootballDataConnector(DataSourceConnector):
                 "finalizado": estado in _FINALIZADOS,
                 "goles_local": score.get("home"),
                 "goles_visitante": score.get("away"),
+                # Duración del partido: REGULAR (90'), EXTRA_TIME (120') o
+                # PENALTY_SHOOTOUT. El marcador `fullTime` de football-data
+                # INCLUYE la prórroga; el modelo predice a 90'. Guardar esto
+                # permite marcar en el display los partidos que se definieron
+                # en tiempo extra (no comparables 1-a-1 con la predicción).
+                "duracion": full.get("duration"),
             }
 
         def fetch():

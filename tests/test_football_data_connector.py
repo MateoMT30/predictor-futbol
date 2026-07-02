@@ -82,6 +82,34 @@ def test_fetch_upcoming_parses_scheduled_games():
     assert isinstance(df.iloc[0]["fecha_hora"], pd.Timestamp)
 
 
+def test_fetch_agenda_captures_duration():
+    """La agenda debe capturar la duración (REGULAR/EXTRA_TIME/PENALTY_SHOOTOUT)
+    para poder marcar los partidos definidos en prórroga — cuyo marcador
+    fullTime incluye el tiempo extra y no es comparable con la predicción a 90'."""
+    connector = FootballDataConnector(api_key="fake-key")
+    payload = {
+        "competition": {"name": "FIFA World Cup"},
+        "matches": [
+            {
+                "id": 1, "status": "FINISHED", "utcDate": "2026-06-29T18:00:00Z",
+                "homeTeam": {"name": "Germany"}, "awayTeam": {"name": "Paraguay"},
+                "score": {"duration": "PENALTY_SHOOTOUT", "fullTime": {"home": 4, "away": 5}},
+            },
+            {
+                "id": 2, "status": "FINISHED", "utcDate": "2026-06-30T18:00:00Z",
+                "homeTeam": {"name": "France"}, "awayTeam": {"name": "Sweden"},
+                "score": {"duration": "REGULAR", "fullTime": {"home": 3, "away": 0}},
+            },
+        ],
+    }
+    with patch("requests.get", return_value=_mock_response(payload)):
+        df = connector.fetch_agenda(liga="WC", dias_pasados=45, dias_futuros=0)
+    ger = df[df["equipo_local"] == "Germany"].iloc[0]
+    fra = df[df["equipo_local"] == "France"].iloc[0]
+    assert ger["duracion"] == "PENALTY_SHOOTOUT"
+    assert fra["duracion"] == "REGULAR"
+
+
 def test_fetch_matches_requires_liga():
     connector = FootballDataConnector(api_key="fake-key")
     with pytest.raises(ValueError):

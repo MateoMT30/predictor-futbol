@@ -141,6 +141,10 @@ MODERN_CSS = """
   }
   .hit-legend .muted { font-size: 0.78rem; }
   .mr-score { color: var(--text); font-size: 0.95rem; font-weight: 800; }
+  .mr-aet {
+    font-size: 0.6rem; font-weight: 700; color: var(--amber); vertical-align: super;
+    margin-left: 3px; letter-spacing: 0.02em; cursor: help;
+  }
   /* Selector "predecir cualquier enfrentamiento" */
   .picker-card {
     background: var(--card); border: 1px solid var(--card-border);
