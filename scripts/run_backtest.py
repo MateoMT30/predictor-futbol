@@ -67,12 +67,23 @@ def _merge_90min(matches_df, api_desde):
     intl = intl[intl["equipo_local"].isin(equipos_api) | intl["equipo_visitante"].isin(equipos_api)]
     if intl.empty:
         return matches_df
-    intl_keys = {
-        (pd.Timestamp(f).date(), h, a)
-        for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"])
-    }
+    # Dedup TOLERANTE A ±1 DÍA: un mismo partido puede figurar en football-data
+    # y en el internacional con la fecha corrida un día (el saque cruza la
+    # medianoche UTC). Con dedup por fecha exacta, la versión con prórroga
+    # sobrevivía junto a la de 90' (partido duplicado + sesgo de temporalidad
+    # de vuelta). Dos selecciones no juegan dos veces en 1 día, así que casar
+    # por (local, visitante) dentro de ±1 día es seguro.
+    from collections import defaultdict
+    intl_pair_dates = defaultdict(list)
+    for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"]):
+        intl_pair_dates[(h, a)].append(pd.Timestamp(f).date())
+
+    def _dup_en_intl(f, h, a):
+        fd = pd.Timestamp(f).date()
+        return any(abs((fd - d).days) <= 1 for d in intl_pair_dates.get((h, a), ()))
+
     base = matches_df[[
-        (pd.Timestamp(f).date(), h, a) not in intl_keys
+        not _dup_en_intl(f, h, a)
         for f, h, a in zip(matches_df["fecha"], matches_df["equipo_local"], matches_df["equipo_visitante"])
     ]]
     out = pd.concat([base, intl], ignore_index=True)

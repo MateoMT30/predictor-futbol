@@ -163,15 +163,25 @@ def _ensure_min_sample(connector, competition, matches_df, local, visitante, has
             # (ver models/goles.py y el badge "TE" de la lista). Se descartan
             # las filas de football-data que también están en el internacional,
             # y se conservan todas las internacionales.
-            intl_keys = {
-                (pd.Timestamp(f).date(), h, a)
-                for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"])
-            }
+            # Dedup tolerante a ±1 día: el mismo partido puede venir con la
+            # fecha corrida un día entre fuentes (saque que cruza medianoche
+            # UTC). Casar por (local, visitante) dentro de ±1 día evita que la
+            # versión con prórroga de football-data sobreviva junto a la de 90'
+            # (dos selecciones no juegan dos veces en un día).
+            from collections import defaultdict
+            intl_pair_dates = defaultdict(list)
+            for f, h, a in zip(intl["fecha"], intl["equipo_local"], intl["equipo_visitante"]):
+                intl_pair_dates[(h, a)].append(pd.Timestamp(f).date())
+
+            def _dup_en_intl(f, h, a):
+                fd = pd.Timestamp(f).date()
+                return any(abs((fd - d).days) <= 1 for d in intl_pair_dates.get((h, a), ()))
+
             if not intl.empty and any(
                 _team_match_count(intl, t) > 0 for t in faltantes
             ):
                 matches_df = matches_df[[
-                    (pd.Timestamp(f).date(), h, a) not in intl_keys
+                    not _dup_en_intl(f, h, a)
                     for f, h, a in zip(matches_df["fecha"], matches_df["equipo_local"], matches_df["equipo_visitante"])
                 ]]
                 matches_df = pd.concat([matches_df, intl], ignore_index=True)
