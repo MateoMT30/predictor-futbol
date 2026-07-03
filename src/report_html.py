@@ -371,12 +371,26 @@ def render_html_report(report: dict, value_bets: Optional[list] = None) -> str:
       <p class="muted">Aunque lo más probable es el empate, si se impone alguien sería
       {html.escape(quien)}, típicamente <b>{mc['local']}-{mc['visitante']}</b>
       ({_pct(mc['prob_dentro_escenario'])} de sus victorias simuladas).</p>"""
+    # Nivel de confianza del pick, derivado de su propia probabilidad. Nace
+    # del análisis de errores: el fallo más común es un favorito con 45-60%
+    # que termina en empate — no es un error del modelo, es que ese pick era
+    # de por sí flojo. Hacerlo explícito evita leer un "Gana X" al 47% como
+    # una promesa. Umbrales: >=60% alta, 45-60% media, <45% "muy parejo"
+    # (el favorito lo es por poco; empate o sorpresa son muy posibles).
+    if pick_prob >= 0.60:
+        conf_txt, conf_cls = "Confianza alta", "conf-alta"
+    elif pick_prob >= 0.45:
+        conf_txt, conf_cls = "Confianza media", "conf-media"
+    else:
+        conf_txt, conf_cls = "Muy parejo", "conf-baja"
+    conf_badge = f'<span class="conf-badge {conf_cls}">{conf_txt}</span>'
+
     verdict_card = f"""
   <div class="card">
     <h2>Pronóstico del modelo</h2>
     <div class="verdict">
       <div>
-        <div class="verdict-pick">{html.escape(pick_label)}</div>
+        <div class="verdict-pick">{html.escape(pick_label)} {conf_badge}</div>
         <div class="verdict-sub">{_pct(pick_prob)} de probabilidad ·
         goles esperados {ge['local']:.2f} - {ge['visitante']:.2f} (total {ge['total']:.2f})</div>
       </div>{score_pill}

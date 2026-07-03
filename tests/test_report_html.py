@@ -34,6 +34,22 @@ def test_render_html_report_contains_team_names():
     assert "<!DOCTYPE html>" in html_doc
 
 
+def test_render_html_report_muestra_nivel_de_confianza():
+    """El veredicto debe declarar el nivel de confianza del pick. Con 1x2
+    37/28/35 (favorito al 37%), es un pick flojo -> 'Muy parejo'."""
+    report = _fake_report()
+    html_doc = render_html_report(report, [])
+    assert "conf-badge" in html_doc
+    assert "Muy parejo" in html_doc
+
+
+def test_render_html_report_confianza_alta_cuando_favorito_claro():
+    report = _fake_report()
+    report["1x2"] = {"local": 0.72, "empate": 0.16, "visitante": 0.12}
+    html_doc = render_html_report(report, [])
+    assert "Confianza alta" in html_doc
+
+
 def test_render_html_report_escapes_team_names():
     report = _fake_report()
     report["partido"]["local"] = "<script>alert(1)</script>"

@@ -227,6 +227,14 @@ MODERN_CSS = """
   .verdict > div:first-child { flex: 1; min-width: 180px; }
   .verdict-pick { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em; }
   .verdict-sub { color: var(--muted); font-size: 0.82rem; margin-top: 4px; line-height: 1.45; }
+  .conf-badge {
+    display: inline-block; font-size: 0.62rem; font-weight: 700; vertical-align: middle;
+    padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em;
+    margin-left: 6px; border: 1px solid transparent;
+  }
+  .conf-alta { background: rgba(34,197,94,0.14); color: #4ade80; border-color: rgba(34,197,94,0.35); }
+  .conf-media { background: rgba(245,158,11,0.14); color: #fcd34d; border-color: rgba(245,158,11,0.35); }
+  .conf-baja { background: rgba(148,163,184,0.12); color: var(--muted); border-color: rgba(148,163,184,0.25); }
   .score-pill {
     margin-left: auto; flex-shrink: 0; text-align: center;
     background: rgba(99,102,241,0.14); border: 1px solid rgba(99,102,241,0.4);
