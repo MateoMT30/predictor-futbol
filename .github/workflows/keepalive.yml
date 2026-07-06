@@ -1,0 +1,43 @@
+# Keep-alive: mantiene despierta la app en Render (plan gratis).
+#
+# El plan gratuito de Render apaga el servicio tras ~15 min de inactividad, y
+# el siguiente request tarda ~50s en "despertarlo". Este workflow le hace ping
+# cada ~10 min para que no se duerma.
+#
+# Nota: la programación (cron) de GitHub Actions es "best-effort" — puede
+# retrasarse 5-15 min en horas pico. Por eso cada corrida hace VARIOS pings
+# espaciados, para cubrir esos huecos. Si necesitas algo 100% garantizado, un
+# monitor externo gratuito (UptimeRobot, cron-job.org) apuntando a la misma URL
+# es más puntual; este workflow no cuesta nada y no requiere servicios extra.
+name: Keep-alive Render
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # cada 10 minutos (aprox., best-effort)
+  workflow_dispatch: {}
+
+# Sin permisos de escritura: solo hace requests de red.
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ping repetido a la app
+        env:
+          URL: "https://predictor-futbol-v4n8.onrender.com/"
+        run: |
+          # 5 pings espaciados 90s (~6 min de cobertura por corrida). Cada ping
+          # reintenta hasta 3 veces por si la app estaba dormida y despertando.
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 \
+                   --retry 3 --retry-delay 5 --retry-all-errors "$URL" || echo "000")
+            echo "ping $i -> HTTP $code ($(date -u +%H:%M:%S) UTC)"
+            if [ "$i" -lt 5 ]; then sleep 90; fi
+          done
