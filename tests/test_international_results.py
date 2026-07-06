@@ -34,7 +34,12 @@ def _fake_raw_csv_df():
 def test_normalize_team_name_cruza_variantes_entre_fuentes():
     assert normalize_team_name("DR Congo") == normalize_team_name("Congo DR")
     assert normalize_team_name("Bosnia and Herzegovina") == normalize_team_name("Bosnia-Herzegovina")
+    # "Cape Verde" (dataset internacional) vs "Cape Verde Islands" (football-data)
+    assert normalize_team_name("Cape Verde") == normalize_team_name("Cape Verde Islands")
+    assert normalize_team_name("Faroe") == normalize_team_name("Faroe Islands")
     assert normalize_team_name("Spain") != normalize_team_name("Portugal")
+    # pero no debe fusionar islas realmente distintas
+    assert normalize_team_name("Cook Islands") != normalize_team_name("Cayman Islands")
 
 
 def test_fetch_filtra_por_fecha_y_descarta_no_jugados(monkeypatch):

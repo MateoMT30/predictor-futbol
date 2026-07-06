@@ -39,12 +39,21 @@ _cache = {"at": 0.0, "df": None}
 _CACHE_TTL = 12 * 3600
 
 
+# Palabras ignoradas al cruzar nombres entre fuentes. "islands"/"island"
+# porque football-data escribe "Cape Verde Islands" y el dataset internacional
+# "Cape Verde" (mismo país); sin esto quedaban como DOS selecciones distintas,
+# duplicando partidos y partiendo su historial. Es seguro: "Cook Islands" y
+# "Cayman Islands" siguen difiriendo por su primer token (cook/cayman), así que
+# no se fusionan países realmente distintos.
+_STOP_TOKENS = {"and", "the", "islands", "island"}
+
+
 def normalize_team_name(name: str) -> str:
     """Clave de cruce tolerante entre fuentes: 'DR Congo' y 'Congo DR'
-    producen la misma clave; 'Bosnia and Herzegovina' y
-    'Bosnia-Herzegovina' también."""
+    producen la misma clave; 'Bosnia and Herzegovina' y 'Bosnia-Herzegovina',
+    y 'Cape Verde' vs 'Cape Verde Islands', también."""
     s = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
-    tokens = [t for t in s.lower().replace("-", " ").split() if t not in ("and", "the")]
+    tokens = [t for t in s.lower().replace("-", " ").split() if t not in _STOP_TOKENS]
     return " ".join(sorted(tokens))
 
 
