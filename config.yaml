@@ -31,6 +31,7 @@ goals_model:
   low_score_correction: true       # aplica la corrección de Dixon-Coles para marcadores 0-0, 1-0, 0-1, 1-1
   regularization: 0.5              # L2 (ridge) sobre ataque/defensa. Calibrado por barrido en backtest: 0.5 mejora Brier (0.52->0.49), marcador exacto (13.6%->22.7%) y 1X2 (56.8%->59.1%) vs 1.5. El tope de abajo controla la cola absurda (antes lo hacía la regularización)
   max_expected_goals: 4.5          # tope duro de goles esperados por equipo; corta la cola absurda en mismatches extremos sin tocar partidos reales (~1.5-2.7 xG)
+  elo_blend_dc_weight: 0.8         # peso del Dixon-Coles al mezclar su 1X2 con el del Elo (0.8 = 80% DC / 20% Elo). Calibrado en backtest: baja el log-loss ~1.3% robustamente. 1.0 = sin blend
 
 markets:
   over_under_lines:

@@ -129,7 +129,10 @@ def main() -> int:
             print(f"  {code}: histórico a 90' (internacional): {antes} -> {len(matches_df)} partidos")
 
         t0 = time.time()
-        result = walk_forward_backtest(matches_df, goals_cfg)
+        result = walk_forward_backtest(
+            matches_df, goals_cfg,
+            elo_dc_weight=config["goals_model"].get("elo_blend_dc_weight", 0.8),
+        )
         if result is None:
             print(f"  {code}: historial insuficiente para evaluar, se omite.")
         else:

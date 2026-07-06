@@ -411,6 +411,7 @@ def main():
         max_expected_goals=config["goals_model"].get("max_expected_goals", 4.5),
     )
     goals_model = DixonColesModel(goals_cfg).fit(matches)
+    goals_model.attach_elo(elo_system, config["goals_model"].get("elo_blend_dc_weight", 0.8))
 
     corners_model = CornersModel(CornersModelConfig(
         half_life_days=config["recency"]["half_life_days"],

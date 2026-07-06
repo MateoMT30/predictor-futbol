@@ -17,6 +17,32 @@ def test_score_matrix_sums_to_one(sample_matches):
     assert abs(matrix.sum() - 1.0) < 1e-6
 
 
+def test_blend_elo_mueve_1x2_hacia_el_elo_y_sigue_normalizado(sample_matches):
+    """attach_elo debe mezclar el 1X2 del DC con el del Elo (acercarlo) y la
+    matriz debe seguir sumando 1. Con dc_weight=1.0 no debe cambiar nada."""
+    from src.ratings import EloRatingSystem
+    model = DixonColesModel(GoalsModelConfig()).fit(sample_matches)
+    base = model.market_probabilities("Colombia", "Argentina")["1x2"]
+
+    elo = EloRatingSystem()
+    elo.replay_history(sample_matches)
+    elo_1x2 = elo.win_probabilities("Colombia", "Argentina")
+
+    # dc_weight=1.0 -> sin efecto
+    model.attach_elo(elo, dc_weight=1.0)
+    assert model.score_matrix("Colombia", "Argentina").sum() == pytest.approx(1.0)
+    igual = model.market_probabilities("Colombia", "Argentina")["1x2"]
+    assert igual["local"] == pytest.approx(base["local"], abs=1e-9)
+
+    # dc_weight=0.5 -> el 1X2 mezclado queda entre el DC y el Elo
+    model.attach_elo(elo, dc_weight=0.5)
+    blend = model.market_probabilities("Colombia", "Argentina")["1x2"]
+    assert sum(blend.values()) == pytest.approx(1.0)
+    for k in ("local", "empate", "visitante"):
+        lo, hi = sorted((base[k], elo_1x2[k]))
+        assert lo - 1e-9 <= blend[k] <= hi + 1e-9
+
+
 def test_market_probabilities_consistent(sample_matches):
     model = DixonColesModel(GoalsModelConfig()).fit(sample_matches)
     report = model.market_probabilities("Colombia", "Argentina")

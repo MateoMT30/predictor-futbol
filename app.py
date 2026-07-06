@@ -816,6 +816,10 @@ def _run_prediction(matches_df, local, visitante, home_adjustment=0.0, away_adju
         max_expected_goals=config["goals_model"].get("max_expected_goals", 4.5),
     )
     goals_model = DixonColesModel(goals_cfg).fit(matches_df)
+    # Blend con Elo: mezcla el 1X2 del Elo (fuerza estable) con el del
+    # Dixon-Coles. Validado en backtest (baja el log-loss ~1.3%). El Elo ya
+    # está reproducido sobre el mismo histórico arriba.
+    goals_model.attach_elo(elo_system, config["goals_model"].get("elo_blend_dc_weight", 0.8))
 
     corners_model = CornersModel(CornersModelConfig(
         half_life_days=config["recency"]["half_life_days"], opponent_strength_weight=config["opponent_strength"]["strength_weight"],

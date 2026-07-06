@@ -77,6 +77,7 @@ def walk_forward_backtest(
     goals_config: Optional[GoalsModelConfig] = None,
     max_matches: int = 40,
     min_history: int = 40,
+    elo_dc_weight: float = 1.0,
 ) -> Optional[dict]:
     """
     Evalúa el modelo sobre los últimos `max_matches` partidos jugados del
@@ -109,6 +110,14 @@ def walk_forward_backtest(
             continue
         try:
             model = DixonColesModel(goals_config).fit(train)
+            # Blend con Elo (mismo que producción) si está activado: se
+            # reconstruye el Elo con SOLO los partidos de entrenamiento, sin
+            # fuga de información.
+            if elo_dc_weight < 1.0:
+                from .ratings import EloRatingSystem
+                elo = EloRatingSystem()
+                elo.replay_history(train)
+                model.attach_elo(elo, elo_dc_weight)
             markets = model.market_probabilities(row["equipo_local"], row["equipo_visitante"], 0.0, 0.0)
             matrix = model.score_matrix(row["equipo_local"], row["equipo_visitante"], 0.0, 0.0)
         except Exception:
